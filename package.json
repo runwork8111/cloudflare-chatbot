@@ -10,7 +10,7 @@
     "deploy:dev": "wrangler deploy",
     "deploy:staging": "wrangler deploy --env staging",
     "deploy:production": "wrangler deploy --env production",
-    "dry-run": "wrangler deploy --dry-run",
+    "dry-run": "wrangler deploy --dry-run --env \"\"",
     "typecheck": "tsc --noEmit",
     "types": "wrangler types",
     "test": "echo \"no tests yet\" && exit 0"
