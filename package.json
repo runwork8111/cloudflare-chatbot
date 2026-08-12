@@ -1,0 +1,24 @@
+{
+  "name": "chatbot-worker",
+  "version": "1.0.0",
+  "description": "Multi-tenant chatbot backend on Cloudflare Workers + OpenAI",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy:dev": "wrangler deploy",
+    "deploy:staging": "wrangler deploy --env staging",
+    "deploy:production": "wrangler deploy --env production",
+    "dry-run": "wrangler deploy --dry-run",
+    "typecheck": "tsc --noEmit",
+    "types": "wrangler types",
+    "test": "echo \"no tests yet\" && exit 0"
+  },
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260811.1",
+    "typescript": "^7.0.2",
+    "wrangler": "^4.121.0"
+  }
+}

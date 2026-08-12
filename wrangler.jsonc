@@ -1,0 +1,32 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  // Base config = "dev". This is what `wrangler dev` / `wrangler deploy` use
+  // when no --env flag is passed.
+  "name": "chatbot-worker-dev",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-12",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+  "vars": {
+    "ENVIRONMENT": "dev"
+  },
+  "env": {
+    "staging": {
+      "name": "chatbot-worker-staging",
+      "vars": {
+        "ENVIRONMENT": "staging"
+      }
+    },
+    "production": {
+      // No suffix: keeps the *.workers.dev prod URL clean, and this is the
+      // name that will get a custom domain attached later.
+      "name": "chatbot-worker",
+      "vars": {
+        "ENVIRONMENT": "production"
+      }
+    }
+  }
+}

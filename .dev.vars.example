@@ -1,0 +1,2 @@
+# Copy this file to .dev.vars for local development (never commit .dev.vars)
+OPENAI_API_KEY=sk-replace-me
