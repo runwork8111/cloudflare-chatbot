@@ -79,7 +79,8 @@ pattern every migration in this repo has followed so far
 
 ## Adding a new tenant (operator quick reference)
 
-See README "Admin API" / "Admin dashboard" for the full flow. Short version:
+See [ONBOARDING.md](./ONBOARDING.md) for the full walkthrough (budgets,
+document uploads, verification steps, common mistakes). Short version:
 
 ```bash
 curl $API_BASE/admin/tenants -X POST -H "Authorization: Bearer $ADMIN_SECRET" \
