@@ -27,6 +27,7 @@
     .cbw-msg { max-width: 80%; padding: 8px 12px; border-radius: 10px; font-size: 13.5px;
       line-height: 1.4; white-space: pre-wrap; word-break: break-word; }
     .cbw-msg.cbw-user { align-self: flex-end; background: #2A55C9; color: #fff; }
+    .cbw-sources { margin-top: 6px; font-size: 11px; opacity: 0.65; }
     .cbw-msg.cbw-assistant { align-self: flex-start; background: #F0F1F3; color: #1A1F26; }
     .cbw-inputRow { display: flex; border-top: 1px solid #e5e5e5; }
     .cbw-input { flex: 1; border: none; padding: 12px; font-size: 13.5px; outline: none; }
@@ -149,7 +150,7 @@
   // Parses a text/event-stream body per the SSE spec: events are separated
   // by a blank line, and multiple `data:` lines within one event are joined
   // with "\n" — required since assistant replies can contain real newlines.
-  async function streamReply(text, onDelta) {
+  async function streamReply(text, onDelta, onDone) {
     const res = await fetch(
       apiBase + "/v1/conversations/" + conversationId + "/messages/stream",
       {
@@ -187,6 +188,13 @@
         const data = dataLines.join("\n");
         if (event === "delta") onDelta(data);
         else if (event === "error") throw new Error(data || "Upstream model request failed");
+        else if (event === "done" && onDone) {
+          try {
+            onDone(JSON.parse(data));
+          } catch {
+            // malformed done payload — non-fatal, the reply already rendered
+          }
+        }
       }
     }
   }
@@ -196,10 +204,21 @@
     appendMessage("user", text);
     const assistantEl = appendMessage("assistant", "");
 
-    await streamReply(text, (delta) => {
-      assistantEl.textContent += delta;
-      messagesEl.scrollTop = messagesEl.scrollHeight;
-    });
+    await streamReply(
+      text,
+      (delta) => {
+        assistantEl.textContent += delta;
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+      },
+      (donePayload) => {
+        if (donePayload.sources && donePayload.sources.length > 0) {
+          const sourcesEl = document.createElement("div");
+          sourcesEl.className = "cbw-sources";
+          sourcesEl.textContent = "Sources: " + donePayload.sources.join(", ");
+          assistantEl.appendChild(sourcesEl);
+        }
+      }
+    );
   }
 
   function handleSend() {

@@ -1,12 +1,13 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { secureHeaders } from "hono/secure-headers";
-import type { AppEnv } from "./types";
+import type { AppEnv, Env, IngestionMessage } from "./types";
 import { tenantAuth } from "./middleware/tenant";
 import { adminAuth } from "./middleware/admin";
 import { rateLimit } from "./middleware/rate-limit";
 import conversations from "./routes/conversations";
 import adminTenants from "./routes/admin-tenants";
+import { ingestDocument } from "./lib/ingestion";
 
 export { RateLimiter } from "./durable-objects/rate-limiter";
 
@@ -52,4 +53,23 @@ app.use("/v1/*", tenantAuth);
 app.use("/v1/*", rateLimit);
 app.route("/v1/conversations", conversations);
 
-export default app;
+export default {
+  fetch: app.fetch,
+
+  // Consumes document-ingestion jobs enqueued by POST
+  // /admin/tenants/:id/documents. Retried (up to the queue's configured
+  // max retries) on failure; ingestDocument itself marks the document
+  // 'failed' with an error message before rethrowing, so a permanently
+  // broken document doesn't retry forever without visibility.
+  async queue(batch: MessageBatch<IngestionMessage>, env: Env): Promise<void> {
+    for (const message of batch.messages) {
+      try {
+        await ingestDocument(env, message.body.tenantId, message.body.documentId);
+        message.ack();
+      } catch (err) {
+        console.error("Document ingestion failed", message.body, err);
+        message.retry();
+      }
+    }
+  },
+};

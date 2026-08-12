@@ -14,6 +14,16 @@ export interface Env {
   // URL) once known. Falls back to "*" when unset, which is what local dev
   // and this environment (no deployed Pages URL yet) use.
   ADMIN_ALLOWED_ORIGIN?: string;
+  // RAG: uploaded source documents, async chunk+embed pipeline, and the
+  // vector index chunks are retrieved from.
+  DOCS_BUCKET: R2Bucket;
+  INGESTION_QUEUE: Queue<IngestionMessage>;
+  VECTOR_INDEX: VectorizeIndex;
+}
+
+export interface IngestionMessage {
+  tenantId: string;
+  documentId: string;
 }
 
 export interface Tenant {

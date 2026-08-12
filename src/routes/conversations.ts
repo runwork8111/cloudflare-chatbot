@@ -6,6 +6,8 @@ import type { AppEnv } from "../types";
 import { chatCompletion, streamChatCompletion } from "../lib/openai";
 import { loadConversationHistory, persistTurn, trimHistory } from "../lib/conversation";
 import { verifyTurnstileToken } from "../lib/turnstile";
+import { getGroundedContext } from "../lib/retrieval";
+import { redactPii } from "../lib/pii";
 
 const app = new Hono<AppEnv>();
 
@@ -62,14 +64,19 @@ app.post("/:id/messages", zValidator("json", sendMessageSchema), async (c) => {
   }
 
   let result;
+  let sources: string[] = [];
   try {
+    const grounded = await getGroundedContext(c.env, tenant, message);
+    sources = grounded.sources;
     result = await chatCompletion(c.env, tenant.model, [
-      { role: "system", content: tenant.system_prompt },
+      { role: "system", content: grounded.systemPrompt },
       ...trimHistory(history),
       { role: "user", content: message },
     ]);
   } catch (err) {
-    console.error("OpenAI request failed", err);
+    // OpenAI error bodies (e.g. content-policy rejections) can echo back
+    // fragments of the user's message — redact before it hits Workers Logs.
+    console.error("OpenAI request failed", redactPii(String(err)));
     return c.json({ error: "Upstream model request failed" }, 502);
   }
 
@@ -82,7 +89,7 @@ app.post("/:id/messages", zValidator("json", sendMessageSchema), async (c) => {
     { promptTokens: result.promptTokens, completionTokens: result.completionTokens }
   );
 
-  return c.json({ id: assistantMessageId, role: "assistant", content: result.content });
+  return c.json({ id: assistantMessageId, role: "assistant", content: result.content, sources });
 });
 
 // SSE variant: streams the assistant reply token-by-token, then persists
@@ -101,10 +108,13 @@ app.post("/:id/messages/stream", zValidator("json", sendMessageSchema), async (c
   return streamSSE(c, async (stream) => {
     let fullContent = "";
     let usage = { promptTokens: 0, completionTokens: 0 };
+    let sources: string[] = [];
 
     try {
+      const grounded = await getGroundedContext(c.env, tenant, message);
+      sources = grounded.sources;
       for await (const event of streamChatCompletion(c.env, tenant.model, [
-        { role: "system", content: tenant.system_prompt },
+        { role: "system", content: grounded.systemPrompt },
         ...trimHistory(history),
         { role: "user", content: message },
       ])) {
@@ -116,7 +126,7 @@ app.post("/:id/messages/stream", zValidator("json", sendMessageSchema), async (c
         }
       }
     } catch (err) {
-      console.error("OpenAI stream failed", err);
+      console.error("OpenAI stream failed", redactPii(String(err)));
       await stream.writeSSE({ event: "error", data: "Upstream model request failed" });
       return;
     }
@@ -130,7 +140,10 @@ app.post("/:id/messages/stream", zValidator("json", sendMessageSchema), async (c
       usage
     );
 
-    await stream.writeSSE({ event: "done", data: JSON.stringify({ id: assistantMessageId }) });
+    await stream.writeSSE({
+      event: "done",
+      data: JSON.stringify({ id: assistantMessageId, sources }),
+    });
   });
 });
 

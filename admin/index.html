@@ -67,6 +67,15 @@
       <button id="newKeyBtn" class="btn-secondary">+ New API key</button>
       <div id="newKeyResult" class="new-key-result" hidden></div>
 
+      <h3>Knowledge base documents</h3>
+      <div id="documentListEl" class="doc-rows"></div>
+      <form id="uploadDocForm" class="upload-doc-form">
+        <input type="text" id="docFilename" placeholder="filename.md" required />
+        <textarea id="docContent" rows="4" placeholder="Paste plain text / markdown content…" required></textarea>
+        <button type="submit" class="btn-secondary">Upload &amp; ingest</button>
+        <span id="uploadDocStatus" class="status"></span>
+      </form>
+
       <h3>Usage (last 30 days)</h3>
       <div id="usageSummary" class="usage-summary"></div>
 

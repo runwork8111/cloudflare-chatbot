@@ -132,4 +132,36 @@ describe("POST /v1/conversations/:id/messages", () => {
     );
     expect(res.status).toBe(400);
   });
+
+  // getGroundedContext only calls the real env.VECTOR_INDEX once a tenant
+  // has ingested documents (test/rag-pipeline.test.ts covers the retrieval
+  // logic itself via an injected fake). Vectorize has no local-dev
+  // simulation, so this is the actual behavior anyone running `wrangler
+  // dev`/`npm test` locally sees today for a tenant with real documents —
+  // asserting it fails as a clean 502, not an unhandled crash, rather than
+  // leaving that path silently unverified.
+  it("degrades to a 502 (not a crash) for a tenant with documents, since Vectorize isn't locally simulated", async () => {
+    const documentId = crypto.randomUUID();
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO documents (id, tenant_id, filename, r2_key) VALUES (?1, ?2, ?3, ?4)`
+      ).bind(documentId, tenantId, "faq.md", `tenants/${tenantId}/documents/${documentId}/faq.md`),
+      env.DB.prepare(
+        `INSERT INTO document_chunks (id, document_id, tenant_id, chunk_index, content, vector_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6)`
+      ).bind(crypto.randomUUID(), documentId, tenantId, 0, "Some content.", `${documentId}:0`),
+    ]);
+
+    const createRes = await SELF.fetch(
+      authedRequest("/v1/conversations", { method: "POST", body: "{}" })
+    );
+    const { id } = await createRes.json<{ id: string }>();
+
+    const res = await SELF.fetch(
+      authedRequest(`/v1/conversations/${id}/messages`, {
+        method: "POST",
+        body: JSON.stringify({ message: "hi" }),
+      })
+    );
+    expect(res.status).toBe(502);
+  });
 });

@@ -181,4 +181,82 @@ app.post("/:tenantId/api-keys/:keyId/revoke", async (c) => {
   return c.json({ revoked: true });
 });
 
+// v0 scope: plain text/markdown only, uploaded as a JSON string body (no
+// multipart/PDF/docx parsing — see README "RAG pipeline" for the reasoning
+// and what a real launch needs beyond this).
+const uploadDocumentSchema = z.object({
+  filename: z.string().min(1).max(255),
+  content: z.string().min(1).max(200_000),
+});
+
+app.post("/:tenantId/documents", zValidator("json", uploadDocumentSchema), async (c) => {
+  const tenantId = c.req.param("tenantId");
+
+  const tenant = await c.env.DB.prepare(`SELECT id FROM tenants WHERE id = ?1`)
+    .bind(tenantId)
+    .first();
+  if (!tenant) {
+    return c.json({ error: "Tenant not found" }, 404);
+  }
+
+  const { filename, content } = c.req.valid("json");
+  const id = crypto.randomUUID();
+  const r2Key = `tenants/${tenantId}/documents/${id}/${filename}`;
+
+  await c.env.DOCS_BUCKET.put(r2Key, content, {
+    httpMetadata: { contentType: "text/plain; charset=utf-8" },
+  });
+  await c.env.DB.prepare(
+    `INSERT INTO documents (id, tenant_id, filename, r2_key) VALUES (?1, ?2, ?3, ?4)`
+  )
+    .bind(id, tenantId, filename, r2Key)
+    .run();
+
+  // Ingestion (chunk + embed + index) happens off the request path — see
+  // the `queue` handler in src/index.ts.
+  await c.env.INGESTION_QUEUE.send({ tenantId, documentId: id });
+
+  return c.json({ id, filename, status: "pending" }, 201);
+});
+
+app.get("/:tenantId/documents", async (c) => {
+  const { results } = await c.env.DB.prepare(
+    `SELECT id, filename, status, error, created_at FROM documents WHERE tenant_id = ?1 ORDER BY created_at DESC`
+  )
+    .bind(c.req.param("tenantId"))
+    .all();
+  return c.json({ documents: results });
+});
+
+app.delete("/:tenantId/documents/:documentId", async (c) => {
+  const { tenantId, documentId } = c.req.param();
+
+  const doc = await c.env.DB.prepare(`SELECT r2_key FROM documents WHERE id = ?1 AND tenant_id = ?2`)
+    .bind(documentId, tenantId)
+    .first<{ r2_key: string }>();
+  if (!doc) {
+    return c.json({ error: "Document not found" }, 404);
+  }
+
+  const { results: chunks } = await c.env.DB.prepare(
+    `SELECT vector_id FROM document_chunks WHERE document_id = ?1`
+  )
+    .bind(documentId)
+    .all<{ vector_id: string }>();
+
+  if (chunks.length > 0) {
+    await c.env.VECTOR_INDEX.deleteByIds(chunks.map((c) => c.vector_id));
+  }
+  await c.env.DOCS_BUCKET.delete(doc.r2_key);
+  // Explicit delete rather than relying on ON DELETE CASCADE — D1's foreign
+  // key enforcement isn't guaranteed on for a given connection, so cascade
+  // is a nice-to-have here, not something to depend on.
+  await c.env.DB.batch([
+    c.env.DB.prepare(`DELETE FROM document_chunks WHERE document_id = ?1`).bind(documentId),
+    c.env.DB.prepare(`DELETE FROM documents WHERE id = ?1`).bind(documentId),
+  ]);
+
+  return c.json({ deleted: true });
+});
+
 export default app;

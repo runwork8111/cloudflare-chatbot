@@ -111,12 +111,70 @@
       el("fieldBrandConfig").value = JSON.stringify(tenant.brand_config, null, 2);
       el("saveStatus").textContent = "";
       await loadApiKeys(id);
+      await loadDocuments(id);
       await loadUsage(id);
       renderEmbedSnippet(tenant);
     } catch (err) {
       alert("Failed to load tenant: " + err.message);
     }
   }
+
+  async function loadDocuments(tenantId) {
+    const { documents } = await api("/admin/tenants/" + tenantId + "/documents");
+    const container = el("documentListEl");
+    container.innerHTML = "";
+    for (const doc of documents) {
+      const row = document.createElement("div");
+      row.className = "doc-row";
+      const label = document.createElement("span");
+      label.textContent = doc.filename;
+      const status = document.createElement("span");
+      status.className = "doc-status " + doc.status;
+      status.textContent = doc.status;
+      if (doc.error) status.title = doc.error;
+      const right = document.createElement("span");
+      right.style.display = "flex";
+      right.style.alignItems = "center";
+      right.appendChild(status);
+      const deleteBtn = document.createElement("button");
+      deleteBtn.className = "btn-danger";
+      deleteBtn.style.marginLeft = "8px";
+      deleteBtn.textContent = "Delete";
+      deleteBtn.addEventListener("click", async () => {
+        if (!confirm("Delete " + doc.filename + "? This removes it from the knowledge base.")) return;
+        await api("/admin/tenants/" + tenantId + "/documents/" + doc.id, { method: "DELETE" });
+        await loadDocuments(tenantId);
+      });
+      right.appendChild(deleteBtn);
+      row.appendChild(label);
+      row.appendChild(right);
+      container.appendChild(row);
+    }
+    if (documents.length === 0) {
+      container.innerHTML = '<p class="hint">No documents uploaded yet — the bot answers from its system prompt alone.</p>';
+    }
+  }
+
+  el("uploadDocForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const statusEl = el("uploadDocStatus");
+    const filename = el("docFilename").value.trim();
+    const content = el("docContent").value;
+    try {
+      await api("/admin/tenants/" + selectedTenantId + "/documents", {
+        method: "POST",
+        body: JSON.stringify({ filename, content }),
+      });
+      el("docFilename").value = "";
+      el("docContent").value = "";
+      statusEl.textContent = "Uploaded — ingesting in the background";
+      statusEl.className = "status ok";
+      await loadDocuments(selectedTenantId);
+    } catch (err) {
+      statusEl.textContent = err.message;
+      statusEl.className = "status error";
+    }
+  });
 
   async function loadUsage(tenantId) {
     const container = el("usageSummary");

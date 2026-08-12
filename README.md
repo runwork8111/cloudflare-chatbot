@@ -156,6 +156,68 @@ Once a widget exists: set its secret key as `TURNSTILE_SECRET_KEY` (via
 embed snippet as `data-turnstile-site-key` (site keys are public, safe to
 ship client-side).
 
+## RAG pipeline
+
+Tenants can upload knowledge-base documents; the bot then answers grounded
+in that content, with citations, instead of relying on the model's general
+knowledge or the base system prompt alone.
+
+**Flow**: `POST /admin/tenants/:id/documents` (raw text/markdown in a JSON
+body — see below) stores the file in R2, inserts a `documents` row
+(`status: 'pending'`), and enqueues a job. The `queue` handler in
+`src/index.ts` picks it up, chunks it (`src/lib/chunking.ts`, paragraph-aware
+with overlap), embeds each chunk (OpenAI `text-embedding-3-small`), and
+upserts them into Vectorize with the source `document_chunks` rows in D1.
+On a chat message, `getGroundedContext` (`src/lib/retrieval.ts`) embeds the
+query, does a `tenantId`-filtered Vectorize search, and — only for tenants
+who've actually uploaded something — wraps the tenant's system prompt with
+grounding, citation, and prompt-injection-defense instructions (retrieved
+document content is treated as untrusted data, not instructions). Both
+`/v1/conversations/:id/messages` and the `/stream` variant return a
+`sources` array alongside the reply; the widget renders it under the
+message.
+
+```bash
+curl http://localhost:8787/admin/tenants/<tenant-id>/documents \
+  -X POST -H "Authorization: Bearer $ADMIN_SECRET" -H "Content-Type: application/json" \
+  -d '{"filename":"faq.md","content":"Our return policy allows returns within 30 days."}'
+```
+
+**v0 scope, deliberately**: plain text/markdown only, uploaded as a JSON
+string (no multipart, no PDF/docx extraction) — real document formats are
+a follow-up, not core to proving the retrieval pipeline works.
+
+**Known limitation — Vectorize has no local-dev simulation.** Wrangler
+warns "Vectorize Index bindings do not support local development" on every
+local run; calling it locally throws "needs to be run remotely" (confirmed
+by actually uploading and ingesting a document against this repo's local
+dev server — it fails exactly there, cleanly, marking the document
+`status: 'failed'` with that message). Two consequences, both handled
+deliberately rather than left silently broken:
+
+1. **Ingestion and retrieval are unit-testable anyway** — `ingestDocument`
+   and `retrieveRelevantChunks` take an injectable `{ embed, vectorIndex }`,
+   the same pattern used for OpenAI's `fetchImpl`. `test/rag-pipeline.test.ts`
+   exercises the real chunk → embed → store → retrieve → grounded-prompt
+   logic end to end against an in-memory fake vector index (real
+   cosine-similarity ranking, deterministic keyword-based fake embeddings)
+   — this is genuine coverage of everything this codebase controls; only
+   Cloudflare's own Vectorize infrastructure is out of reach here.
+2. **A tenant with real documents will 502 in local dev / this
+   environment** until a real Vectorize index exists remotely — asserted
+   explicitly in `test/conversations.test.ts` rather than left as an
+   unexplained gap.
+
+**To make it actually work** (needs `wrangler login` + real account access
+this environment doesn't have):
+
+```bash
+npx wrangler vectorize create chatbot-worker-chunks-dev --dimensions 1536 --metric cosine
+npx wrangler r2 bucket create chatbot-worker-docs-dev
+npx wrangler queues create chatbot-worker-ingestion-dev
+# repeat with -staging/-production names for those environments
+```
+
 ## CI
 
 Every PR generates Worker types, typechecks, runs the test suite (`npm test`,
