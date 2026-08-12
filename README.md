@@ -3,9 +3,10 @@
 Multi-tenant chatbot backend on Cloudflare Workers + OpenAI. See
 [ARCHITECTURE.md](./ARCHITECTURE.md) for a system diagram,
 [THREAT_MODEL.md](./THREAT_MODEL.md) for the security posture and known
-gaps, [RUNBOOK.md](./RUNBOOK.md) for rollback/incident procedures, and
+gaps, [RUNBOOK.md](./RUNBOOK.md) for rollback/incident procedures,
 [ONBOARDING.md](./ONBOARDING.md) for the full walkthrough of adding a new
-tenant.
+tenant, and [LAUNCH_CHECKLIST.md](./LAUNCH_CHECKLIST.md) for what's left
+before a real pilot.
 
 ## Environments
 
