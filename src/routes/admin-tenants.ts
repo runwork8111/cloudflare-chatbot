@@ -130,6 +130,30 @@ app.get("/:tenantId/usage", async (c) => {
   return c.json({ days, summary, daily });
 });
 
+// CSV, for dropping into a spreadsheet or a billing tool — this project has
+// no Stripe (or other payment provider) integration, since that needs a
+// real account/API keys this environment doesn't have. This is the
+// interim: an operator can reconcile spend manually, or feed it into
+// whatever billing system they do have.
+app.get("/:tenantId/usage/export", async (c) => {
+  const tenantId = c.req.param("tenantId");
+  const days = Math.min(365, Math.max(1, Number(c.req.query("days")) || 30));
+  const since = Math.floor(Date.now() / 1000) - days * 86400;
+
+  const daily = await getTenantUsageByDay(c.env, tenantId, since);
+
+  const header = "date,requests,tokens_input,tokens_output,cost_usd";
+  const rows = daily.map(
+    (d) => `${d.date},${d.requestCount},${d.tokensInput},${d.tokensOutput},${d.costUsd.toFixed(6)}`
+  );
+  const csv = [header, ...rows].join("\n") + "\n";
+
+  return c.text(csv, 200, {
+    "Content-Type": "text/csv; charset=utf-8",
+    "Content-Disposition": `attachment; filename="usage-${tenantId}-${days}d.csv"`,
+  });
+});
+
 const createApiKeySchema = z.object({
   label: z.string().max(255).optional(),
 });

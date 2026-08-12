@@ -65,6 +65,7 @@ once; only its hash is stored.
 | `GET /admin/tenants/:id` | Fetch one tenant |
 | `PATCH /admin/tenants/:id` | Update name/model/system_prompt/brand_config |
 | `GET /admin/tenants/:id/usage?days=30` | Request count, tokens, estimated cost (totals + daily) |
+| `GET /admin/tenants/:id/usage/export?days=30` | Same, as a downloadable CSV |
 | `POST /admin/tenants/:id/api-keys` | Mint a key (raw key shown once) |
 | `GET /admin/tenants/:id/api-keys` | List keys (no hash/raw key exposed) |
 | `POST /admin/tenants/:id/api-keys/:keyId/revoke` | Revoke a key |
@@ -98,6 +99,15 @@ month (`src/lib/usage.ts`'s `isOverMonthlyBudget`) *before* calling OpenAI,
 returning `402 Payment Required` once the cap is reached — so a capped
 tenant can't run up further spend past its budget, not even by one more
 request's worth.
+
+### Billing export
+
+`GET /admin/tenants/:id/usage/export?days=30` returns a CSV (date,
+requests, tokens in/out, cost) — the dashboard's "Export 30-day CSV"
+button downloads it. No Stripe (or other payment provider) integration:
+that needs a real merchant account and API keys this environment doesn't
+have. This CSV is the interim — reconcile manually, or feed it into
+whatever billing system actually exists.
 
 ## Admin dashboard
 

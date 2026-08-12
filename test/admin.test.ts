@@ -199,6 +199,49 @@ describe("GET /admin/tenants/:id/usage", () => {
   });
 });
 
+describe("GET /admin/tenants/:id/usage/export", () => {
+  it("returns a CSV with a header row and one row per day of usage", async () => {
+    const slug = `export-${crypto.randomUUID()}`;
+    const createRes = await SELF.fetch(
+      adminRequest("/admin/tenants", { method: "POST", body: JSON.stringify({ slug, name: "Export Co" }) })
+    );
+    const { id: tenantId } = await createRes.json<{ id: string }>();
+
+    await env.DB.prepare(
+      `INSERT INTO usage_events (id, tenant_id, event_type, model, tokens_input, tokens_output, cost_usd) VALUES (?1, ?2, 'chat_completion', 'gpt-4o-mini', 100, 50, 0.001234)`
+    )
+      .bind(crypto.randomUUID(), tenantId)
+      .run();
+
+    const res = await SELF.fetch(
+      adminRequest(`/admin/tenants/${tenantId}/usage/export`, { method: "GET" })
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toContain("text/csv");
+    expect(res.headers.get("Content-Disposition")).toContain("attachment");
+
+    const csv = await res.text();
+    const lines = csv.trim().split("\n");
+    expect(lines[0]).toBe("date,requests,tokens_input,tokens_output,cost_usd");
+    expect(lines).toHaveLength(2);
+    expect(lines[1]).toContain(",1,100,50,0.001234");
+  });
+
+  it("returns just the header row for a tenant with no usage", async () => {
+    const slug = `export-empty-${crypto.randomUUID()}`;
+    const createRes = await SELF.fetch(
+      adminRequest("/admin/tenants", { method: "POST", body: JSON.stringify({ slug, name: "Export Empty Co" }) })
+    );
+    const { id: tenantId } = await createRes.json<{ id: string }>();
+
+    const res = await SELF.fetch(
+      adminRequest(`/admin/tenants/${tenantId}/usage/export`, { method: "GET" })
+    );
+    const csv = await res.text();
+    expect(csv.trim()).toBe("date,requests,tokens_input,tokens_output,cost_usd");
+  });
+});
+
 describe("API key lifecycle", () => {
   it("mints a key that authenticates against /v1/*, then revokes it", async () => {
     const slug = `lifecycle-${crypto.randomUUID()}`;

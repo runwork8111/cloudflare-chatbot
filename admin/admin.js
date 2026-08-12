@@ -201,6 +201,25 @@
     }
   }
 
+  el("exportUsageBtn").addEventListener("click", async () => {
+    try {
+      const res = await fetch(
+        settings.apiBase + "/admin/tenants/" + selectedTenantId + "/usage/export",
+        { headers: { Authorization: "Bearer " + settings.adminSecret } }
+      );
+      if (!res.ok) throw new Error("Export failed (" + res.status + ")");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "usage-" + selectedTenantId + ".csv";
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert("Failed to export usage: " + err.message);
+    }
+  });
+
   el("tenantForm").addEventListener("submit", async (e) => {
     e.preventDefault();
     const statusEl = el("saveStatus");
