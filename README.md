@@ -49,6 +49,25 @@ curl http://localhost:8787/v1/conversations \
   -d '{"external_user_ref":"visitor-42"}'
 ```
 
+## Widget
+
+`widget/widget.js` is a single self-contained script (no build step) that
+renders a chat bubble and talks to `/v1/conversations*` directly from the
+browser, including manual SSE parsing for the streaming endpoint (EventSource
+can't send POST bodies, so it isn't used here). `/v1/*` has permissive CORS
+since the widget runs on arbitrary tenant domains.
+
+```bash
+npx wrangler dev            # in one terminal
+npx serve widget             # in another — open the printed URL's demo.html
+```
+
+**Known interim tradeoff**: the widget embeds the tenant's API key in
+client-visible markup, and that key currently has full API access. That's
+fine for local development, but before a real pilot (Week 2, rate limiting +
+Turnstile) this needs a separate, restricted "public" key type that's
+rate-limited and safe to expose client-side.
+
 ## CI
 
 Every PR runs typecheck + `wrangler deploy --dry-run` via GitHub Actions
