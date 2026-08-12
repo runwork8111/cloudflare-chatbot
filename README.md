@@ -1,7 +1,9 @@
 # chatbot-worker
 
 Multi-tenant chatbot backend on Cloudflare Workers + OpenAI. See
-[THREAT_MODEL.md](./THREAT_MODEL.md) for the security posture and known gaps.
+[THREAT_MODEL.md](./THREAT_MODEL.md) for the security posture and known
+gaps, and [RUNBOOK.md](./RUNBOOK.md) for rollback/incident procedures and
+day-to-day operator tasks.
 
 ## Environments
 
@@ -312,3 +314,19 @@ None of this has actually run, since it needs `CLOUDFLARE_API_TOKEN` /
 `CLOUDFLARE_ACCOUNT_ID` for a real account this environment doesn't have;
 the YAML is validated (`python -c "import yaml; yaml.safe_load(...)"`)
 but not executed.
+
+### Production deploys
+
+Never automatic on a push to `main` — only a `v*.*.*` tag push or a manual
+"Run workflow" (`workflow_dispatch`) triggers `deploy-production`, and it
+still needs `validate` to pass first. The real gate is the GitHub
+Environment: set required reviewers on the `production` environment
+(Settings → Environments → production → protection rules) and the job
+pauses for manual approval before touching anything, on top of the tag/
+manual-trigger requirement. Same shape as staging otherwise (D1 migrations
+→ deploy → optional `PRODUCTION_URL` smoke test).
+
+If something goes wrong after a production deploy, see
+[RUNBOOK.md](./RUNBOOK.md) — `wrangler rollback` for a bad deploy, a
+forward-fixing migration (or D1 Time Travel, for actual data loss) for a
+bad migration.
