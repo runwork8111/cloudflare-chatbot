@@ -7,7 +7,7 @@ import { chatCompletion, streamChatCompletion } from "../lib/openai";
 import { loadConversationHistory, persistTurn, trimHistory } from "../lib/conversation";
 import { verifyTurnstileToken } from "../lib/turnstile";
 import { getGroundedContext } from "../lib/retrieval";
-import { redactPii } from "../lib/pii";
+import { logger } from "../lib/logger";
 
 const app = new Hono<AppEnv>();
 
@@ -75,8 +75,9 @@ app.post("/:id/messages", zValidator("json", sendMessageSchema), async (c) => {
     ]);
   } catch (err) {
     // OpenAI error bodies (e.g. content-policy rejections) can echo back
-    // fragments of the user's message — redact before it hits Workers Logs.
-    console.error("OpenAI request failed", redactPii(String(err)));
+    // fragments of the user's message — logger redacts before it hits
+    // Workers Logs.
+    logger.error(`OpenAI request failed: ${String(err)}`, { tenantId: tenant.id, conversationId });
     return c.json({ error: "Upstream model request failed" }, 502);
   }
 
@@ -126,7 +127,7 @@ app.post("/:id/messages/stream", zValidator("json", sendMessageSchema), async (c
         }
       }
     } catch (err) {
-      console.error("OpenAI stream failed", redactPii(String(err)));
+      logger.error(`OpenAI stream failed: ${String(err)}`, { tenantId: tenant.id, conversationId });
       await stream.writeSSE({ event: "error", data: "Upstream model request failed" });
       return;
     }

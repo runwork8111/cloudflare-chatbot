@@ -218,6 +218,28 @@ npx wrangler queues create chatbot-worker-ingestion-dev
 # repeat with -staging/-production names for those environments
 ```
 
+## Observability
+
+Every request logs one structured JSON line (`src/lib/logger.ts` +
+`src/middleware/request-logger.ts`): `route`, `method`, `status`,
+`durationMs`, `tenantId` when known. Errors go through the same logger, so
+`OpenAI request failed`-type messages get PII-redacted (`src/lib/pii.ts`)
+before they hit Workers Logs. View them with:
+
+```bash
+npx wrangler tail                    # deployed Worker
+# local `wrangler dev` prints them directly to its own terminal
+```
+
+`observability.enabled: true` in `wrangler.jsonc` is what makes these
+queryable in the Cloudflare dashboard's Logs view for a deployed Worker.
+Two things this doesn't cover, deliberately left as follow-ups rather than
+faked: a **dashboard** (Analytics Engine, or piping logs to Grafana/Datadog)
+and **alerting** (email/Slack/PagerDuty on error-rate or latency spikes) —
+both need a real Cloudflare account (and, for alerting, a destination) to
+configure, which this environment doesn't have. The structured fields above
+are exactly what either would query against once wired up.
+
 ## CI
 
 Every PR generates Worker types, typechecks, runs the test suite (`npm test`,

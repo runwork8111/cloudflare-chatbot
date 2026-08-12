@@ -8,6 +8,8 @@ import { rateLimit } from "./middleware/rate-limit";
 import conversations from "./routes/conversations";
 import adminTenants from "./routes/admin-tenants";
 import { ingestDocument } from "./lib/ingestion";
+import { requestLogger } from "./middleware/request-logger";
+import { logger } from "./lib/logger";
 
 export { RateLimiter } from "./durable-objects/rate-limiter";
 
@@ -17,6 +19,7 @@ const app = new Hono<AppEnv>();
 // (the admin dashboard is a separate static site), so most of these matter
 // less than on an HTML app, but they're free and non-controversial here.
 app.use(secureHeaders());
+app.use(requestLogger);
 
 app.get("/health", (c) => c.json({ ok: true, environment: c.env.ENVIRONMENT }));
 
@@ -67,7 +70,11 @@ export default {
         await ingestDocument(env, message.body.tenantId, message.body.documentId);
         message.ack();
       } catch (err) {
-        console.error("Document ingestion failed", message.body, err);
+        logger.error("document ingestion failed", {
+          tenantId: message.body.tenantId,
+          documentId: message.body.documentId,
+          error: String(err),
+        });
         message.retry();
       }
     }
