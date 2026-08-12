@@ -240,6 +240,32 @@ both need a real Cloudflare account (and, for alerting, a destination) to
 configure, which this environment doesn't have. The structured fields above
 are exactly what either would query against once wired up.
 
+## Load testing
+
+`scripts/load-test.mjs` seeds a tenant via the admin API, then hammers
+`POST /v1/conversations` with [autocannon](https://github.com/mcollina/autocannon)
+— that endpoint rather than `/messages` deliberately, to measure this
+Worker's own overhead (D1 write, rate-limiter DO round-trip, Zod
+validation) separately from OpenAI's latency, which dominates `/messages`
+and isn't something this codebase controls.
+
+```bash
+npx wrangler dev   # in one terminal
+ADMIN_SECRET=local-dev-admin-secret LOAD_TEST_DURATION=10 LOAD_TEST_CONNECTIONS=10 \
+  npm run load-test
+```
+
+Ran it against local `wrangler dev` (5s, 5 connections): **28 requests,
+~4.6 req/sec, ~1024ms median latency**. Take that as a smoke test that the
+script and the endpoint both work, not a production capacity number —
+local `wrangler dev` has real per-request overhead (D1-over-IPC, cold
+workerd startup) that a deployed edge Worker doesn't have. Also: the
+30 req/min per-tenant rate limit means sustained runs above that show
+`429`s by design — that's the rate limiter working, not the test failing.
+A real capacity number needs running this against a deployed
+staging/production Worker, which needs a real Cloudflare deployment this
+environment can't create.
+
 ## CI
 
 Every PR generates Worker types, typechecks, runs the test suite (`npm test`,
