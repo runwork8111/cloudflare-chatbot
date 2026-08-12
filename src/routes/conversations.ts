@@ -1,8 +1,10 @@
 import { Hono } from "hono";
+import { streamSSE } from "hono/streaming";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import type { AppEnv } from "../types";
-import { chatCompletion, type ChatMessage } from "../lib/openai";
+import { chatCompletion, streamChatCompletion } from "../lib/openai";
+import { loadConversationHistory, persistTurn } from "../lib/conversation";
 
 const app = new Hono<AppEnv>();
 
@@ -35,66 +37,82 @@ app.post("/:id/messages", zValidator("json", sendMessageSchema), async (c) => {
   const conversationId = c.req.param("id");
   const { message } = c.req.valid("json");
 
-  const conversation = await c.env.DB.prepare(
-    `SELECT id FROM conversations WHERE id = ?1 AND tenant_id = ?2`
-  )
-    .bind(conversationId, tenant.id)
-    .first();
-
-  if (!conversation) {
+  const history = await loadConversationHistory(c.env, tenant.id, conversationId);
+  if (!history) {
     return c.json({ error: "Conversation not found" }, 404);
   }
 
-  const history = await c.env.DB.prepare(
-    `SELECT role, content FROM messages WHERE conversation_id = ?1 ORDER BY created_at ASC`
-  )
-    .bind(conversationId)
-    .all<ChatMessage>();
-
-  const chatMessages: ChatMessage[] = [
-    { role: "system", content: tenant.system_prompt },
-    ...history.results,
-    { role: "user", content: message },
-  ];
-
   let result;
   try {
-    result = await chatCompletion(c.env, tenant.model, chatMessages);
+    result = await chatCompletion(c.env, tenant.model, [
+      { role: "system", content: tenant.system_prompt },
+      ...history,
+      { role: "user", content: message },
+    ]);
   } catch (err) {
     console.error("OpenAI request failed", err);
     return c.json({ error: "Upstream model request failed" }, 502);
   }
 
-  const userMessageId = crypto.randomUUID();
-  const assistantMessageId = crypto.randomUUID();
-
-  // prompt_tokens covers the full context (system + history + this message),
-  // not just the new user turn — stored on the user row as the closest
-  // per-turn attribution until proper usage accounting lands (Week 4).
-  await c.env.DB.batch([
-    c.env.DB.prepare(
-      `INSERT INTO messages (id, conversation_id, role, content, tokens_input) VALUES (?1, ?2, 'user', ?3, ?4)`
-    ).bind(userMessageId, conversationId, message, result.promptTokens),
-    c.env.DB.prepare(
-      `INSERT INTO messages (id, conversation_id, role, content, tokens_output) VALUES (?1, ?2, 'assistant', ?3, ?4)`
-    ).bind(assistantMessageId, conversationId, result.content, result.completionTokens),
-    c.env.DB.prepare(`UPDATE conversations SET updated_at = unixepoch() WHERE id = ?1`).bind(
-      conversationId
-    ),
-    c.env.DB.prepare(
-      `INSERT INTO usage_events (id, tenant_id, conversation_id, event_type, model, tokens_input, tokens_output)
-       VALUES (?1, ?2, ?3, 'chat_completion', ?4, ?5, ?6)`
-    ).bind(
-      crypto.randomUUID(),
-      tenant.id,
-      conversationId,
-      tenant.model,
-      result.promptTokens,
-      result.completionTokens
-    ),
-  ]);
+  const { assistantMessageId } = await persistTurn(
+    c.env,
+    tenant,
+    conversationId,
+    message,
+    result.content,
+    { promptTokens: result.promptTokens, completionTokens: result.completionTokens }
+  );
 
   return c.json({ id: assistantMessageId, role: "assistant", content: result.content });
+});
+
+// SSE variant: streams the assistant reply token-by-token, then persists
+// the full turn once the model finishes. This is what the embeddable widget
+// (Day 6) talks to.
+app.post("/:id/messages/stream", zValidator("json", sendMessageSchema), async (c) => {
+  const tenant = c.get("tenant");
+  const conversationId = c.req.param("id");
+  const { message } = c.req.valid("json");
+
+  const history = await loadConversationHistory(c.env, tenant.id, conversationId);
+  if (!history) {
+    return c.json({ error: "Conversation not found" }, 404);
+  }
+
+  return streamSSE(c, async (stream) => {
+    let fullContent = "";
+    let usage = { promptTokens: 0, completionTokens: 0 };
+
+    try {
+      for await (const event of streamChatCompletion(c.env, tenant.model, [
+        { role: "system", content: tenant.system_prompt },
+        ...history,
+        { role: "user", content: message },
+      ])) {
+        if (event.type === "delta") {
+          fullContent += event.content;
+          await stream.writeSSE({ event: "delta", data: event.content });
+        } else {
+          usage = { promptTokens: event.promptTokens, completionTokens: event.completionTokens };
+        }
+      }
+    } catch (err) {
+      console.error("OpenAI stream failed", err);
+      await stream.writeSSE({ event: "error", data: "Upstream model request failed" });
+      return;
+    }
+
+    const { assistantMessageId } = await persistTurn(
+      c.env,
+      tenant,
+      conversationId,
+      message,
+      fullContent,
+      usage
+    );
+
+    await stream.writeSSE({ event: "done", data: JSON.stringify({ id: assistantMessageId }) });
+  });
 });
 
 export default app;
