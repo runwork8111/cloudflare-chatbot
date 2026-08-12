@@ -3,6 +3,7 @@
   const apiBase = scriptTag.getAttribute("data-api-base");
   const apiKey = scriptTag.getAttribute("data-api-key");
   const title = scriptTag.getAttribute("data-title") || "Chat with us";
+  const turnstileSiteKey = scriptTag.getAttribute("data-turnstile-site-key");
 
   if (!apiBase || !apiKey) {
     console.error("[chatbot-widget] data-api-base and data-api-key are required");
@@ -26,6 +27,7 @@
     .cbw-msg { max-width: 80%; padding: 8px 12px; border-radius: 10px; font-size: 13.5px;
       line-height: 1.4; white-space: pre-wrap; word-break: break-word; }
     .cbw-msg.cbw-user { align-self: flex-end; background: #2A55C9; color: #fff; }
+    .cbw-sources { margin-top: 6px; font-size: 11px; opacity: 0.65; }
     .cbw-msg.cbw-assistant { align-self: flex-start; background: #F0F1F3; color: #1A1F26; }
     .cbw-inputRow { display: flex; border-top: 1px solid #e5e5e5; }
     .cbw-input { flex: 1; border: none; padding: 12px; font-size: 13.5px; outline: none; }
@@ -84,12 +86,60 @@
     return el;
   }
 
+  // Loads the Turnstile script and runs an invisible challenge, once, the
+  // first time a visitor sends a message. Silently skipped when no site key
+  // is configured (e.g. local dev) — the server only requires a token when
+  // it has a secret key to verify it against.
+  let turnstileScriptPromise = null;
+  function loadTurnstileScript() {
+    if (window.turnstile) return Promise.resolve();
+    if (!turnstileScriptPromise) {
+      turnstileScriptPromise = new Promise((resolve, reject) => {
+        const script = document.createElement("script");
+        script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js";
+        script.async = true;
+        script.onload = () => resolve();
+        script.onerror = () => reject(new Error("Failed to load Turnstile"));
+        document.head.appendChild(script);
+      });
+    }
+    return turnstileScriptPromise;
+  }
+
+  function getTurnstileToken() {
+    if (!turnstileSiteKey) return Promise.resolve(undefined);
+
+    return loadTurnstileScript().then(
+      () =>
+        new Promise((resolve) => {
+          const container = document.createElement("div");
+          container.style.display = "none";
+          document.body.appendChild(container);
+
+          window.turnstile.render(container, {
+            sitekey: turnstileSiteKey,
+            size: "invisible",
+            callback: (token) => {
+              container.remove();
+              resolve(token);
+            },
+            "error-callback": () => {
+              container.remove();
+              resolve(undefined);
+            },
+          });
+        })
+    );
+  }
+
   async function ensureConversation() {
     if (conversationId) return conversationId;
+
+    const turnstileToken = await getTurnstileToken().catch(() => undefined);
     const res = await fetch(apiBase + "/v1/conversations", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: "Bearer " + apiKey },
-      body: JSON.stringify({}),
+      body: JSON.stringify(turnstileToken ? { turnstile_token: turnstileToken } : {}),
     });
     if (!res.ok) throw new Error("Failed to start conversation (" + res.status + ")");
     const data = await res.json();
@@ -100,7 +150,7 @@
   // Parses a text/event-stream body per the SSE spec: events are separated
   // by a blank line, and multiple `data:` lines within one event are joined
   // with "\n" — required since assistant replies can contain real newlines.
-  async function streamReply(text, onDelta) {
+  async function streamReply(text, onDelta, onDone) {
     const res = await fetch(
       apiBase + "/v1/conversations/" + conversationId + "/messages/stream",
       {
@@ -138,6 +188,13 @@
         const data = dataLines.join("\n");
         if (event === "delta") onDelta(data);
         else if (event === "error") throw new Error(data || "Upstream model request failed");
+        else if (event === "done" && onDone) {
+          try {
+            onDone(JSON.parse(data));
+          } catch {
+            // malformed done payload — non-fatal, the reply already rendered
+          }
+        }
       }
     }
   }
@@ -147,10 +204,21 @@
     appendMessage("user", text);
     const assistantEl = appendMessage("assistant", "");
 
-    await streamReply(text, (delta) => {
-      assistantEl.textContent += delta;
-      messagesEl.scrollTop = messagesEl.scrollHeight;
-    });
+    await streamReply(
+      text,
+      (delta) => {
+        assistantEl.textContent += delta;
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+      },
+      (donePayload) => {
+        if (donePayload.sources && donePayload.sources.length > 0) {
+          const sourcesEl = document.createElement("div");
+          sourcesEl.className = "cbw-sources";
+          sourcesEl.textContent = "Sources: " + donePayload.sources.join(", ");
+          assistantEl.appendChild(sourcesEl);
+        }
+      }
+    );
   }
 
   function handleSend() {

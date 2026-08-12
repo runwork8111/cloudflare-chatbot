@@ -3,7 +3,9 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, staging]
+    tags: ["v*.*.*"]
+  workflow_dispatch: {}
 
 jobs:
   validate:
@@ -18,11 +20,113 @@ jobs:
 
       - run: npm ci
 
+      - name: Generate Worker types
+        run: npm run types
+
       - name: Typecheck
         run: npm run typecheck
+
+      - name: Run tests
+        run: npm test
 
       - name: Wrangler dry-run deploy
         run: npm run dry-run
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+  # Push to `staging` -> deploy to the staging environment. Gated on
+  # `validate` passing first, so a broken build never reaches a real
+  # environment. Needs D1/R2/Vectorize/Queues resources for -staging to
+  # already exist (see README "Environments" / "RAG pipeline" for the
+  # `wrangler ... create` commands) — this job does not create them.
+  deploy-staging:
+    needs: validate
+    if: github.ref == 'refs/heads/staging' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Generate Worker types
+        run: npm run types
+
+      - name: Apply D1 migrations (remote, staging)
+        run: npx wrangler d1 migrations apply chatbot-worker-db-staging --remote
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Deploy to staging
+        run: npm run deploy:staging
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      # STAGING_URL is optional (e.g. https://chatbot-worker-staging.<your-subdomain>.workers.dev)
+      # — the *.workers.dev subdomain is account-specific and can't be
+      # hardcoded, so the smoke test is skipped rather than guessed at
+      # when the secret isn't set.
+      - name: Smoke test /health
+        if: ${{ vars.STAGING_URL != '' }}
+        run: |
+          status=$(curl -s -o /dev/null -w "%{http_code}" "${{ vars.STAGING_URL }}/health")
+          if [ "$status" != "200" ]; then
+            echo "Staging health check failed: HTTP $status"
+            exit 1
+          fi
+          echo "Staging health check passed"
+
+  # Production deploys are never automatic on a push to main — only a
+  # `v*.*.*` tag or a manual workflow_dispatch triggers this job. The real
+  # gate is the "production" GitHub Environment: configure required
+  # reviewers on it (Settings -> Environments -> production -> protection
+  # rules) and the job pauses for manual approval before it runs, on top of
+  # `validate` already having passed. See "Rollback runbook" in the README
+  # for what to do if a production deploy needs to be undone.
+  deploy-production:
+    needs: validate
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Generate Worker types
+        run: npm run types
+
+      - name: Apply D1 migrations (remote, production)
+        run: npx wrangler d1 migrations apply chatbot-worker-db-production --remote
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Deploy to production
+        run: npm run deploy:production
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Smoke test /health
+        if: ${{ vars.PRODUCTION_URL != '' }}
+        run: |
+          status=$(curl -s -o /dev/null -w "%{http_code}" "${{ vars.PRODUCTION_URL }}/health")
+          if [ "$status" != "200" ]; then
+            echo "Production health check failed: HTTP $status"
+            exit 1
+          fi
+          echo "Production health check passed"

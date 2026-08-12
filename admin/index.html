@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>chatbot-worker admin</title>
+<link rel="stylesheet" href="admin.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>chatbot-worker admin</h1>
+    <button id="settingsBtn" class="btn-secondary">Settings</button>
+  </header>
+
+  <dialog id="settingsDialog">
+    <form method="dialog" id="settingsForm">
+      <h2>Connection</h2>
+      <label>API base URL
+        <input type="text" id="apiBaseInput" placeholder="http://localhost:8787" required />
+      </label>
+      <label>Admin secret
+        <input type="password" id="adminSecretInput" required />
+      </label>
+      <label>Widget script URL <span class="hint">(where widget.js is hosted, for the embed snippet)</span>
+        <input type="text" id="widgetUrlInput" placeholder="https://cdn.example.com/widget.js" />
+      </label>
+      <div class="dialog-actions">
+        <button type="submit" class="btn-primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <main class="layout">
+    <section class="panel tenant-list">
+      <div class="panel-head">
+        <h2>Tenants</h2>
+        <button id="newTenantBtn" class="btn-primary">+ New tenant</button>
+      </div>
+      <div id="tenantListEl" class="tenant-rows"></div>
+    </section>
+
+    <section class="panel tenant-detail" id="detailPanel" hidden>
+      <div class="panel-head">
+        <h2 id="detailName">—</h2>
+        <span class="slug" id="detailSlug"></span>
+      </div>
+
+      <form id="tenantForm" class="stacked">
+        <label>Name
+          <input type="text" id="fieldName" required />
+        </label>
+        <label>Model
+          <input type="text" id="fieldModel" required />
+        </label>
+        <label>System prompt
+          <textarea id="fieldSystemPrompt" rows="5"></textarea>
+        </label>
+        <label>Brand config <span class="hint">(raw JSON)</span>
+          <textarea id="fieldBrandConfig" rows="3" class="mono"></textarea>
+        </label>
+        <label>Monthly budget (USD) <span class="hint">(blank = unlimited)</span>
+          <input type="number" id="fieldBudget" min="0" step="0.01" placeholder="unlimited" />
+        </label>
+        <button type="submit" class="btn-primary">Save changes</button>
+        <span id="saveStatus" class="status"></span>
+      </form>
+
+      <h3>API keys</h3>
+      <div id="apiKeyListEl" class="key-rows"></div>
+      <button id="newKeyBtn" class="btn-secondary">+ New API key</button>
+      <div id="newKeyResult" class="new-key-result" hidden></div>
+
+      <h3>Knowledge base documents</h3>
+      <div id="documentListEl" class="doc-rows"></div>
+      <form id="uploadDocForm" class="upload-doc-form">
+        <input type="text" id="docFilename" placeholder="filename.md" required />
+        <textarea id="docContent" rows="4" placeholder="Paste plain text / markdown content…" required></textarea>
+        <button type="submit" class="btn-secondary">Upload &amp; ingest</button>
+        <span id="uploadDocStatus" class="status"></span>
+      </form>
+
+      <h3>Usage (last 30 days)</h3>
+      <div id="usageSummary" class="usage-summary"></div>
+      <button id="exportUsageBtn" class="btn-secondary">Export 30-day CSV</button>
+
+      <h3>Embed snippet</h3>
+      <p class="hint">Uses the most recently minted key shown above — mint one first.</p>
+      <pre id="embedSnippet" class="mono embed-snippet">Mint a key to generate an embed snippet.</pre>
+    </section>
+  </main>
+
+  <script src="admin.js"></script>
+</body>
+</html>

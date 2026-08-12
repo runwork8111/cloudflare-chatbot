@@ -13,12 +13,17 @@
     "dry-run": "wrangler deploy --dry-run --env \"\"",
     "typecheck": "tsc --noEmit",
     "types": "wrangler types",
-    "test": "echo \"no tests yet\" && exit 0"
+    "test": "vitest run",
+    "load-test": "node scripts/load-test.mjs"
   },
   "license": "UNLICENSED",
   "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.21.1",
     "@cloudflare/workers-types": "^5.20260811.1",
+    "@types/node": "^26.2.0",
+    "autocannon": "^8.0.0",
     "typescript": "^7.0.2",
+    "vitest": "^4.1.10",
     "wrangler": "^4.121.0"
   },
   "dependencies": {

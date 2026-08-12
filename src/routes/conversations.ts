@@ -4,19 +4,41 @@ import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import type { AppEnv } from "../types";
 import { chatCompletion, streamChatCompletion } from "../lib/openai";
-import { loadConversationHistory, persistTurn } from "../lib/conversation";
+import { loadConversationHistory, persistTurn, trimHistory } from "../lib/conversation";
+import { verifyTurnstileToken } from "../lib/turnstile";
+import { getGroundedContext } from "../lib/retrieval";
+import { logger } from "../lib/logger";
+import { isOverMonthlyBudget } from "../lib/usage";
 
 const app = new Hono<AppEnv>();
 
 const createConversationSchema = z.object({
   external_user_ref: z.string().max(255).optional(),
+  turnstile_token: z.string().optional(),
 });
 
-// Creates a conversation scoped to the authenticated tenant. This is the
-// shape the Day 4 chat-completion endpoint will build on.
+// Creates a conversation scoped to the authenticated tenant. This is where
+// bot verification happens (once per new visitor session, not per message —
+// Turnstile tokens are short-lived and single-use, so they belong at the
+// start of a conversation, not sprinkled across every /messages call).
 app.post("/", zValidator("json", createConversationSchema), async (c) => {
   const tenant = c.get("tenant");
-  const { external_user_ref } = c.req.valid("json");
+  const { external_user_ref, turnstile_token } = c.req.valid("json");
+
+  if (c.env.TURNSTILE_SECRET_KEY) {
+    if (!turnstile_token) {
+      return c.json({ error: "Missing turnstile_token" }, 400);
+    }
+    const verified = await verifyTurnstileToken(
+      c.env.TURNSTILE_SECRET_KEY,
+      turnstile_token,
+      c.req.header("CF-Connecting-IP")
+    );
+    if (!verified) {
+      return c.json({ error: "Bot verification failed" }, 403);
+    }
+  }
+
   const id = crypto.randomUUID();
 
   await c.env.DB.prepare(
@@ -42,15 +64,25 @@ app.post("/:id/messages", zValidator("json", sendMessageSchema), async (c) => {
     return c.json({ error: "Conversation not found" }, 404);
   }
 
+  if (await isOverMonthlyBudget(c.env, tenant)) {
+    return c.json({ error: "Monthly budget exceeded for this tenant" }, 402);
+  }
+
   let result;
+  let sources: string[] = [];
   try {
+    const grounded = await getGroundedContext(c.env, tenant, message);
+    sources = grounded.sources;
     result = await chatCompletion(c.env, tenant.model, [
-      { role: "system", content: tenant.system_prompt },
-      ...history,
+      { role: "system", content: grounded.systemPrompt },
+      ...trimHistory(history),
       { role: "user", content: message },
     ]);
   } catch (err) {
-    console.error("OpenAI request failed", err);
+    // OpenAI error bodies (e.g. content-policy rejections) can echo back
+    // fragments of the user's message — logger redacts before it hits
+    // Workers Logs.
+    logger.error(`OpenAI request failed: ${String(err)}`, { tenantId: tenant.id, conversationId });
     return c.json({ error: "Upstream model request failed" }, 502);
   }
 
@@ -63,7 +95,7 @@ app.post("/:id/messages", zValidator("json", sendMessageSchema), async (c) => {
     { promptTokens: result.promptTokens, completionTokens: result.completionTokens }
   );
 
-  return c.json({ id: assistantMessageId, role: "assistant", content: result.content });
+  return c.json({ id: assistantMessageId, role: "assistant", content: result.content, sources });
 });
 
 // SSE variant: streams the assistant reply token-by-token, then persists
@@ -79,14 +111,21 @@ app.post("/:id/messages/stream", zValidator("json", sendMessageSchema), async (c
     return c.json({ error: "Conversation not found" }, 404);
   }
 
+  if (await isOverMonthlyBudget(c.env, tenant)) {
+    return c.json({ error: "Monthly budget exceeded for this tenant" }, 402);
+  }
+
   return streamSSE(c, async (stream) => {
     let fullContent = "";
     let usage = { promptTokens: 0, completionTokens: 0 };
+    let sources: string[] = [];
 
     try {
+      const grounded = await getGroundedContext(c.env, tenant, message);
+      sources = grounded.sources;
       for await (const event of streamChatCompletion(c.env, tenant.model, [
-        { role: "system", content: tenant.system_prompt },
-        ...history,
+        { role: "system", content: grounded.systemPrompt },
+        ...trimHistory(history),
         { role: "user", content: message },
       ])) {
         if (event.type === "delta") {
@@ -97,7 +136,7 @@ app.post("/:id/messages/stream", zValidator("json", sendMessageSchema), async (c
         }
       }
     } catch (err) {
-      console.error("OpenAI stream failed", err);
+      logger.error(`OpenAI stream failed: ${String(err)}`, { tenantId: tenant.id, conversationId });
       await stream.writeSSE({ event: "error", data: "Upstream model request failed" });
       return;
     }
@@ -111,7 +150,10 @@ app.post("/:id/messages/stream", zValidator("json", sendMessageSchema), async (c
       usage
     );
 
-    await stream.writeSSE({ event: "done", data: JSON.stringify({ id: assistantMessageId }) });
+    await stream.writeSSE({
+      event: "done",
+      data: JSON.stringify({ id: assistantMessageId, sources }),
+    });
   });
 });
 

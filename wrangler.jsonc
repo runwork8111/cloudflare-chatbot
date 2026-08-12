@@ -25,6 +25,24 @@
       "migrations_dir": "migrations"
     }
   ],
+  // Shared across all environments (not overridden per-env below), one DO
+  // instance per rate-limit key.
+  "durable_objects": {
+    "bindings": [{ "name": "RATE_LIMITER", "class_name": "RateLimiter" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RateLimiter"] }],
+  // RAG pipeline: uploaded docs (R2), async chunk+embed jobs (Queues), and
+  // the vector index chunks are retrieved from (Vectorize). Local `wrangler
+  // dev` simulates all three without needing real resources to exist first;
+  // real deploys need them created — see README "RAG pipeline" section.
+  "r2_buckets": [{ "binding": "DOCS_BUCKET", "bucket_name": "chatbot-worker-docs-dev" }],
+  "queues": {
+    "producers": [{ "binding": "INGESTION_QUEUE", "queue": "chatbot-worker-ingestion-dev" }],
+    "consumers": [
+      { "queue": "chatbot-worker-ingestion-dev", "max_batch_size": 5, "max_batch_timeout": 5 }
+    ]
+  },
+  "vectorize": [{ "binding": "VECTOR_INDEX", "index_name": "chatbot-worker-chunks-dev" }],
   "env": {
     "staging": {
       "name": "chatbot-worker-staging",
@@ -38,7 +56,21 @@
           "database_id": "REPLACE_WITH_STAGING_DATABASE_ID",
           "migrations_dir": "migrations"
         }
-      ]
+      ],
+      "r2_buckets": [{ "binding": "DOCS_BUCKET", "bucket_name": "chatbot-worker-docs-staging" }],
+      "queues": {
+        "producers": [
+          { "binding": "INGESTION_QUEUE", "queue": "chatbot-worker-ingestion-staging" }
+        ],
+        "consumers": [
+          {
+            "queue": "chatbot-worker-ingestion-staging",
+            "max_batch_size": 5,
+            "max_batch_timeout": 5
+          }
+        ]
+      },
+      "vectorize": [{ "binding": "VECTOR_INDEX", "index_name": "chatbot-worker-chunks-staging" }]
     },
     "production": {
       // No suffix: keeps the *.workers.dev prod URL clean, and this is the
@@ -54,7 +86,21 @@
           "database_id": "REPLACE_WITH_PRODUCTION_DATABASE_ID",
           "migrations_dir": "migrations"
         }
-      ]
+      ],
+      "r2_buckets": [{ "binding": "DOCS_BUCKET", "bucket_name": "chatbot-worker-docs-production" }],
+      "queues": {
+        "producers": [
+          { "binding": "INGESTION_QUEUE", "queue": "chatbot-worker-ingestion-production" }
+        ],
+        "consumers": [
+          {
+            "queue": "chatbot-worker-ingestion-production",
+            "max_batch_size": 5,
+            "max_batch_timeout": 5
+          }
+        ]
+      },
+      "vectorize": [{ "binding": "VECTOR_INDEX", "index_name": "chatbot-worker-chunks-production" }]
     }
   }
 }

@@ -19,9 +19,10 @@ interface OpenAIChatResponse {
 export async function chatCompletion(
   env: Env,
   model: string,
-  messages: ChatMessage[]
+  messages: ChatMessage[],
+  fetchImpl: typeof fetch = fetch
 ): Promise<ChatCompletionResult> {
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+  const res = await fetchImpl("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -42,6 +43,35 @@ export async function chatCompletion(
   };
 }
 
+interface OpenAIEmbeddingResponse {
+  data: { embedding: number[]; index: number }[];
+}
+
+// Embeds a batch of texts in one request. Order of the returned vectors
+// matches the input order — OpenAI returns an `index` per item, which is
+// used to re-sort defensively rather than trusting response array order.
+export async function embedTexts(
+  env: Env,
+  texts: string[],
+  fetchImpl: typeof fetch = fetch
+): Promise<number[][]> {
+  const res = await fetchImpl("https://api.openai.com/v1/embeddings", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${env.OPENAI_API_KEY}`,
+    },
+    body: JSON.stringify({ model: "text-embedding-3-small", input: texts }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`OpenAI embeddings request failed (${res.status}): ${await res.text()}`);
+  }
+
+  const data = (await res.json()) as OpenAIEmbeddingResponse;
+  return [...data.data].sort((a, b) => a.index - b.index).map((d) => d.embedding);
+}
+
 export type ChatStreamEvent =
   | { type: "delta"; content: string }
   | { type: "usage"; promptTokens: number; completionTokens: number };
@@ -57,9 +87,10 @@ interface OpenAIStreamChunk {
 export async function* streamChatCompletion(
   env: Env,
   model: string,
-  messages: ChatMessage[]
+  messages: ChatMessage[],
+  fetchImpl: typeof fetch = fetch
 ): AsyncGenerator<ChatStreamEvent> {
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+  const res = await fetchImpl("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
