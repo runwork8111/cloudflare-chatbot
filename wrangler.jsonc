@@ -25,6 +25,12 @@
       "migrations_dir": "migrations"
     }
   ],
+  // Shared across all environments (not overridden per-env below), one DO
+  // instance per rate-limit key.
+  "durable_objects": {
+    "bindings": [{ "name": "RATE_LIMITER", "class_name": "RateLimiter" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RateLimiter"] }],
   "env": {
     "staging": {
       "name": "chatbot-worker-staging",

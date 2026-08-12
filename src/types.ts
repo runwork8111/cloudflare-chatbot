@@ -1,8 +1,11 @@
+import type { RateLimiter } from "./durable-objects/rate-limiter";
+
 export interface Env {
   ENVIRONMENT: string;
   DB: D1Database;
   OPENAI_API_KEY: string;
   ADMIN_SECRET: string;
+  RATE_LIMITER: DurableObjectNamespace<RateLimiter>;
 }
 
 export interface Tenant {

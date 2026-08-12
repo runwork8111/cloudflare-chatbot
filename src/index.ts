@@ -3,8 +3,11 @@ import { cors } from "hono/cors";
 import type { AppEnv } from "./types";
 import { tenantAuth } from "./middleware/tenant";
 import { adminAuth } from "./middleware/admin";
+import { rateLimit } from "./middleware/rate-limit";
 import conversations from "./routes/conversations";
 import adminTenants from "./routes/admin-tenants";
+
+export { RateLimiter } from "./durable-objects/rate-limiter";
 
 const app = new Hono<AppEnv>();
 
@@ -29,6 +32,7 @@ app.use(
   })
 );
 app.use("/v1/*", tenantAuth);
+app.use("/v1/*", rateLimit);
 app.route("/v1/conversations", conversations);
 
 export default app;
