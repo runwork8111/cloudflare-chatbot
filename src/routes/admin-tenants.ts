@@ -18,6 +18,22 @@ const createTenantSchema = z.object({
   brand_config: z.record(z.string(), z.unknown()).default({}),
 });
 
+interface TenantRow {
+  id: string;
+  slug: string;
+  name: string;
+  plan: string;
+  model: string;
+  system_prompt: string;
+  brand_config: string;
+  created_at: number;
+  updated_at: number;
+}
+
+function serializeTenant(row: TenantRow) {
+  return { ...row, brand_config: JSON.parse(row.brand_config) };
+}
+
 app.post("/", zValidator("json", createTenantSchema), async (c) => {
   const body = c.req.valid("json");
   const id = crypto.randomUUID();
@@ -36,6 +52,64 @@ app.post("/", zValidator("json", createTenantSchema), async (c) => {
   }
 
   return c.json({ id, slug: body.slug, name: body.name }, 201);
+});
+
+app.get("/", async (c) => {
+  const { results } = await c.env.DB.prepare(
+    `SELECT * FROM tenants ORDER BY created_at DESC`
+  ).all<TenantRow>();
+  return c.json({ tenants: results.map(serializeTenant) });
+});
+
+app.get("/:tenantId", async (c) => {
+  const tenant = await c.env.DB.prepare(`SELECT * FROM tenants WHERE id = ?1`)
+    .bind(c.req.param("tenantId"))
+    .first<TenantRow>();
+  if (!tenant) return c.json({ error: "Tenant not found" }, 404);
+  return c.json(serializeTenant(tenant));
+});
+
+const updateTenantSchema = z.object({
+  name: z.string().min(1).max(255).optional(),
+  model: z.string().min(1).max(100).optional(),
+  system_prompt: z.string().max(4000).optional(),
+  brand_config: z.record(z.string(), z.unknown()).optional(),
+});
+
+app.patch("/:tenantId", zValidator("json", updateTenantSchema), async (c) => {
+  const tenantId = c.req.param("tenantId");
+  const updates = c.req.valid("json");
+
+  if (Object.keys(updates).length === 0) {
+    return c.json({ error: "No fields to update" }, 400);
+  }
+
+  const setClauses: string[] = [];
+  const values: unknown[] = [];
+  let paramIndex = 1;
+
+  for (const [key, value] of Object.entries(updates)) {
+    setClauses.push(`${key} = ?${paramIndex}`);
+    values.push(key === "brand_config" ? JSON.stringify(value) : value);
+    paramIndex += 1;
+  }
+  setClauses.push(`updated_at = unixepoch()`);
+  values.push(tenantId);
+
+  const result = await c.env.DB.prepare(
+    `UPDATE tenants SET ${setClauses.join(", ")} WHERE id = ?${paramIndex}`
+  )
+    .bind(...values)
+    .run();
+
+  if (result.meta.changes === 0) {
+    return c.json({ error: "Tenant not found" }, 404);
+  }
+
+  const tenant = await c.env.DB.prepare(`SELECT * FROM tenants WHERE id = ?1`)
+    .bind(tenantId)
+    .first<TenantRow>();
+  return c.json(serializeTenant(tenant as TenantRow));
 });
 
 const createApiKeySchema = z.object({
@@ -66,6 +140,15 @@ app.post("/:tenantId/api-keys", zValidator("json", createApiKeySchema), async (c
     .run();
 
   return c.json({ id, key: rawKey }, 201);
+});
+
+app.get("/:tenantId/api-keys", async (c) => {
+  const { results } = await c.env.DB.prepare(
+    `SELECT id, label, last_used_at, revoked_at, created_at FROM api_keys WHERE tenant_id = ?1 ORDER BY created_at DESC`
+  )
+    .bind(c.req.param("tenantId"))
+    .all();
+  return c.json({ api_keys: results });
 });
 
 app.post("/:tenantId/api-keys/:keyId/revoke", async (c) => {

@@ -51,10 +51,21 @@ curl http://localhost:8787/v1/conversations \
 
 ## Admin API
 
-`/admin/*` creates tenants and mints/revokes their API keys. It's protected
-by a single shared secret (`ADMIN_SECRET`) — an internal control-plane tool
-for now, superseded by the Cloudflare Access-gated dashboard planned for
-Week 2. A minted key is returned exactly once; only its hash is stored.
+`/admin/*` creates and updates tenants and mints/revokes their API keys.
+It's protected by a single shared secret (`ADMIN_SECRET`) — an internal
+control-plane tool for now, superseded by a Cloudflare Access-gated version
+once this is deployed against a real zone. A minted key is returned exactly
+once; only its hash is stored.
+
+| Route | Purpose |
+|---|---|
+| `POST /admin/tenants` | Create a tenant |
+| `GET /admin/tenants` | List tenants |
+| `GET /admin/tenants/:id` | Fetch one tenant |
+| `PATCH /admin/tenants/:id` | Update name/model/system_prompt/brand_config |
+| `POST /admin/tenants/:id/api-keys` | Mint a key (raw key shown once) |
+| `GET /admin/tenants/:id/api-keys` | List keys (no hash/raw key exposed) |
+| `POST /admin/tenants/:id/api-keys/:keyId/revoke` | Revoke a key |
 
 ```bash
 curl http://localhost:8787/admin/tenants \
@@ -71,6 +82,32 @@ curl http://localhost:8787/admin/tenants/<tenant-id>/api-keys \
 curl http://localhost:8787/admin/tenants/<tenant-id>/api-keys/<key-id>/revoke \
   -X POST -H "Authorization: Bearer $ADMIN_SECRET" -H "Content-Type: application/json" -d '{}'
 ```
+
+## Admin dashboard
+
+`admin/` is a static, no-build-step SPA (plain HTML/CSS/JS, same style as
+the widget) over the admin API above: lists tenants, edits
+name/model/system_prompt/brand_config, mints and revokes API keys, and
+generates the widget embed `<script>` snippet from a freshly minted key.
+
+```bash
+npx wrangler dev        # in one terminal
+npx serve admin          # in another — open the printed URL
+```
+
+On first load it asks for the API base URL, `ADMIN_SECRET`, and (optionally)
+where `widget/widget.js` is hosted, all stored in `localStorage` — nothing
+is sent anywhere except to the API base you configure. Minted keys are kept
+in memory only for the current page session, matching the server's
+"shown once" behavior; refreshing loses it, same as the API does.
+
+**Deployment note**: this is a static site, so it deploys to Cloudflare
+Pages (`wrangler pages deploy admin`) same as any other static app — but
+gating it with Cloudflare Access instead of a client-side secret prompt
+requires a zone and Access policy configured in the dashboard, which needs
+real account access this environment doesn't have. Until then, treat the
+`ADMIN_SECRET` prompt as the access control, same as the raw `curl` calls
+above.
 
 ## Widget
 

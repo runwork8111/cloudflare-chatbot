@@ -14,8 +14,19 @@ const app = new Hono<AppEnv>();
 app.get("/health", (c) => c.json({ ok: true, environment: c.env.ENVIRONMENT }));
 
 // Internal tenant-management API — creates tenants and mints/revokes their
-// API keys. Shared-secret protected for now; superseded by the Cloudflare
-// Access-gated admin dashboard in Week 2.
+// API keys. Shared-secret protected for now (ADMIN_SECRET, checked by
+// adminAuth); superseded by the Cloudflare Access-gated dashboard once one
+// exists. CORS is permissive here the same way it is on /v1/*: the admin
+// dashboard (Day 11) is a static site on a different origin, and the secret
+// is what actually gates access, not the origin.
+app.use(
+  "/admin/*",
+  cors({
+    origin: "*",
+    allowMethods: ["GET", "POST", "PATCH", "OPTIONS"],
+    allowHeaders: ["Content-Type", "Authorization"],
+  })
+);
 app.use("/admin/*", adminAuth);
 app.route("/admin/tenants", adminTenants);
 

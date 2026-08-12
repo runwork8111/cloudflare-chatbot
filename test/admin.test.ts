@@ -70,6 +70,94 @@ describe("POST /admin/tenants", () => {
   });
 });
 
+describe("GET/PATCH /admin/tenants", () => {
+  it("lists and fetches a created tenant", async () => {
+    const slug = `list-${crypto.randomUUID()}`;
+    const createRes = await SELF.fetch(
+      adminRequest("/admin/tenants", { method: "POST", body: JSON.stringify({ slug, name: "List Co" }) })
+    );
+    const { id } = await createRes.json<{ id: string }>();
+
+    const listRes = await SELF.fetch(adminRequest("/admin/tenants", { method: "GET" }));
+    expect(listRes.status).toBe(200);
+    const { tenants } = await listRes.json<{ tenants: { id: string }[] }>();
+    expect(tenants.some((t) => t.id === id)).toBe(true);
+
+    const getRes = await SELF.fetch(adminRequest(`/admin/tenants/${id}`, { method: "GET" }));
+    expect(getRes.status).toBe(200);
+    const tenant = await getRes.json<{ slug: string; brand_config: unknown }>();
+    expect(tenant.slug).toBe(slug);
+    expect(tenant.brand_config).toEqual({});
+  });
+
+  it("returns 404 fetching an unknown tenant", async () => {
+    const res = await SELF.fetch(adminRequest("/admin/tenants/does-not-exist", { method: "GET" }));
+    expect(res.status).toBe(404);
+  });
+
+  it("updates system_prompt and model", async () => {
+    const slug = `update-${crypto.randomUUID()}`;
+    const createRes = await SELF.fetch(
+      adminRequest("/admin/tenants", { method: "POST", body: JSON.stringify({ slug, name: "Update Co" }) })
+    );
+    const { id } = await createRes.json<{ id: string }>();
+
+    const patchRes = await SELF.fetch(
+      adminRequest(`/admin/tenants/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ system_prompt: "Be extra helpful.", model: "gpt-4o" }),
+      })
+    );
+    expect(patchRes.status).toBe(200);
+    const updated = await patchRes.json<{ system_prompt: string; model: string }>();
+    expect(updated.system_prompt).toBe("Be extra helpful.");
+    expect(updated.model).toBe("gpt-4o");
+  });
+
+  it("rejects an empty update body", async () => {
+    const res = await SELF.fetch(
+      adminRequest("/admin/tenants/some-id", { method: "PATCH", body: "{}" })
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 404 patching an unknown tenant", async () => {
+    const res = await SELF.fetch(
+      adminRequest("/admin/tenants/does-not-exist", {
+        method: "PATCH",
+        body: JSON.stringify({ name: "New Name" }),
+      })
+    );
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("GET /admin/tenants/:id/api-keys", () => {
+  it("lists keys without exposing the hash", async () => {
+    const slug = `keylist-${crypto.randomUUID()}`;
+    const createTenantRes = await SELF.fetch(
+      adminRequest("/admin/tenants", { method: "POST", body: JSON.stringify({ slug, name: "Key List Co" }) })
+    );
+    const { id: tenantId } = await createTenantRes.json<{ id: string }>();
+
+    await SELF.fetch(
+      adminRequest(`/admin/tenants/${tenantId}/api-keys`, {
+        method: "POST",
+        body: JSON.stringify({ label: "widget" }),
+      })
+    );
+
+    const listRes = await SELF.fetch(
+      adminRequest(`/admin/tenants/${tenantId}/api-keys`, { method: "GET" })
+    );
+    expect(listRes.status).toBe(200);
+    const { api_keys } = await listRes.json<{ api_keys: Record<string, unknown>[] }>();
+    expect(api_keys).toHaveLength(1);
+    expect(api_keys[0].label).toBe("widget");
+    expect(api_keys[0]).not.toHaveProperty("key_hash");
+  });
+});
+
 describe("API key lifecycle", () => {
   it("mints a key that authenticates against /v1/*, then revokes it", async () => {
     const slug = `lifecycle-${crypto.randomUUID()}`;
