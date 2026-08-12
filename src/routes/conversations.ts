@@ -5,18 +5,37 @@ import { z } from "zod";
 import type { AppEnv } from "../types";
 import { chatCompletion, streamChatCompletion } from "../lib/openai";
 import { loadConversationHistory, persistTurn, trimHistory } from "../lib/conversation";
+import { verifyTurnstileToken } from "../lib/turnstile";
 
 const app = new Hono<AppEnv>();
 
 const createConversationSchema = z.object({
   external_user_ref: z.string().max(255).optional(),
+  turnstile_token: z.string().optional(),
 });
 
-// Creates a conversation scoped to the authenticated tenant. This is the
-// shape the Day 4 chat-completion endpoint will build on.
+// Creates a conversation scoped to the authenticated tenant. This is where
+// bot verification happens (once per new visitor session, not per message —
+// Turnstile tokens are short-lived and single-use, so they belong at the
+// start of a conversation, not sprinkled across every /messages call).
 app.post("/", zValidator("json", createConversationSchema), async (c) => {
   const tenant = c.get("tenant");
-  const { external_user_ref } = c.req.valid("json");
+  const { external_user_ref, turnstile_token } = c.req.valid("json");
+
+  if (c.env.TURNSTILE_SECRET_KEY) {
+    if (!turnstile_token) {
+      return c.json({ error: "Missing turnstile_token" }, 400);
+    }
+    const verified = await verifyTurnstileToken(
+      c.env.TURNSTILE_SECRET_KEY,
+      turnstile_token,
+      c.req.header("CF-Connecting-IP")
+    );
+    if (!verified) {
+      return c.json({ error: "Bot verification failed" }, 403);
+    }
+  }
+
   const id = crypto.randomUUID();
 
   await c.env.DB.prepare(

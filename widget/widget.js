@@ -3,6 +3,7 @@
   const apiBase = scriptTag.getAttribute("data-api-base");
   const apiKey = scriptTag.getAttribute("data-api-key");
   const title = scriptTag.getAttribute("data-title") || "Chat with us";
+  const turnstileSiteKey = scriptTag.getAttribute("data-turnstile-site-key");
 
   if (!apiBase || !apiKey) {
     console.error("[chatbot-widget] data-api-base and data-api-key are required");
@@ -84,12 +85,60 @@
     return el;
   }
 
+  // Loads the Turnstile script and runs an invisible challenge, once, the
+  // first time a visitor sends a message. Silently skipped when no site key
+  // is configured (e.g. local dev) — the server only requires a token when
+  // it has a secret key to verify it against.
+  let turnstileScriptPromise = null;
+  function loadTurnstileScript() {
+    if (window.turnstile) return Promise.resolve();
+    if (!turnstileScriptPromise) {
+      turnstileScriptPromise = new Promise((resolve, reject) => {
+        const script = document.createElement("script");
+        script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js";
+        script.async = true;
+        script.onload = () => resolve();
+        script.onerror = () => reject(new Error("Failed to load Turnstile"));
+        document.head.appendChild(script);
+      });
+    }
+    return turnstileScriptPromise;
+  }
+
+  function getTurnstileToken() {
+    if (!turnstileSiteKey) return Promise.resolve(undefined);
+
+    return loadTurnstileScript().then(
+      () =>
+        new Promise((resolve) => {
+          const container = document.createElement("div");
+          container.style.display = "none";
+          document.body.appendChild(container);
+
+          window.turnstile.render(container, {
+            sitekey: turnstileSiteKey,
+            size: "invisible",
+            callback: (token) => {
+              container.remove();
+              resolve(token);
+            },
+            "error-callback": () => {
+              container.remove();
+              resolve(undefined);
+            },
+          });
+        })
+    );
+  }
+
   async function ensureConversation() {
     if (conversationId) return conversationId;
+
+    const turnstileToken = await getTurnstileToken().catch(() => undefined);
     const res = await fetch(apiBase + "/v1/conversations", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: "Bearer " + apiKey },
-      body: JSON.stringify({}),
+      body: JSON.stringify(turnstileToken ? { turnstile_token: turnstileToken } : {}),
     });
     if (!res.ok) throw new Error("Failed to start conversation (" + res.status + ")");
     const data = await res.json();

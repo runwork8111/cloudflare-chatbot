@@ -6,6 +6,10 @@ export interface Env {
   OPENAI_API_KEY: string;
   ADMIN_SECRET: string;
   RATE_LIMITER: DurableObjectNamespace<RateLimiter>;
+  // Empty/unset in local dev and CI (no real Cloudflare-issued widget to
+  // verify against) — verification is skipped in that case. Set as a real
+  // secret in staging/production once a Turnstile widget exists.
+  TURNSTILE_SECRET_KEY?: string;
 }
 
 export interface Tenant {

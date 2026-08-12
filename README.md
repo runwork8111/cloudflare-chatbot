@@ -86,10 +86,32 @@ npx serve widget             # in another — open the printed URL's demo.html
 ```
 
 **Known interim tradeoff**: the widget embeds the tenant's API key in
-client-visible markup, and that key currently has full API access. That's
-fine for local development, but before a real pilot (Week 2, rate limiting +
-Turnstile) this needs a separate, restricted "public" key type that's
-rate-limited and safe to expose client-side.
+client-visible markup, and that key currently has full admin-mintable-key
+access rather than a separate restricted "public" key type. Rate limiting
+(below) and Turnstile bound the blast radius of that for now; a distinct
+public-key type is still worth doing before a real pilot.
+
+## Rate limiting
+
+Each tenant gets a 30 requests/minute budget on `/v1/*`, enforced by a
+Durable Object (`src/durable-objects/rate-limiter.ts`) — one DO instance per
+tenant, so the increment-and-check is atomic without needing a distributed
+lock. Exceeding it returns `429` with a `Retry-After` header.
+
+## Turnstile
+
+Conversation creation (`POST /v1/conversations`) verifies a Turnstile token
+server-side whenever `TURNSTILE_SECRET_KEY` is set — this is the one piece
+of this project that needs a real Cloudflare Turnstile widget, which can
+only be created against a live Cloudflare account (`wrangler login`, then
+either the dashboard or the `turnstile-spin` skill). Until that exists,
+leave `TURNSTILE_SECRET_KEY` unset (the default in `.dev.vars.example`) and
+verification is skipped — this is what local dev and CI do today.
+
+Once a widget exists: set its secret key as `TURNSTILE_SECRET_KEY` (via
+`wrangler secret put` for staging/production), and pass its site key to the
+embed snippet as `data-turnstile-site-key` (site keys are public, safe to
+ship client-side).
 
 ## CI
 
