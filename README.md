@@ -1,6 +1,7 @@
 # chatbot-worker
 
-Multi-tenant chatbot backend on Cloudflare Workers + OpenAI.
+Multi-tenant chatbot backend on Cloudflare Workers + OpenAI. See
+[THREAT_MODEL.md](./THREAT_MODEL.md) for the security posture and known gaps.
 
 ## Environments
 

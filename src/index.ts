@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { secureHeaders } from "hono/secure-headers";
 import type { AppEnv } from "./types";
 import { tenantAuth } from "./middleware/tenant";
 import { adminAuth } from "./middleware/admin";
@@ -11,18 +12,23 @@ export { RateLimiter } from "./durable-objects/rate-limiter";
 
 const app = new Hono<AppEnv>();
 
+// Baseline defense-in-depth headers on every response. This is a JSON API
+// (the admin dashboard is a separate static site), so most of these matter
+// less than on an HTML app, but they're free and non-controversial here.
+app.use(secureHeaders());
+
 app.get("/health", (c) => c.json({ ok: true, environment: c.env.ENVIRONMENT }));
 
 // Internal tenant-management API — creates tenants and mints/revokes their
 // API keys. Shared-secret protected for now (ADMIN_SECRET, checked by
 // adminAuth); superseded by the Cloudflare Access-gated dashboard once one
-// exists. CORS is permissive here the same way it is on /v1/*: the admin
-// dashboard (Day 11) is a static site on a different origin, and the secret
-// is what actually gates access, not the origin.
+// exists. CORS defaults to permissive (matches /v1/*'s reasoning: the
+// secret gates access, not the origin) but narrows to ADMIN_ALLOWED_ORIGIN
+// once the dashboard has a real deployed URL to pin it to.
 app.use(
   "/admin/*",
   cors({
-    origin: "*",
+    origin: (_origin, c) => c.env.ADMIN_ALLOWED_ORIGIN || "*",
     allowMethods: ["GET", "POST", "PATCH", "OPTIONS"],
     allowHeaders: ["Content-Type", "Authorization"],
   })

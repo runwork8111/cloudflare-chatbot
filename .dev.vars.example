@@ -4,3 +4,6 @@ ADMIN_SECRET=replace-with-a-long-random-string
 # Optional: leave unset for local dev (verification is skipped when unset).
 # Set once a real Turnstile widget exists — see README "Turnstile" section.
 TURNSTILE_SECRET_KEY=
+# Optional: restricts /admin/* CORS to this origin once the dashboard has a
+# real deployed URL. Leave unset to allow any origin (the current default).
+ADMIN_ALLOWED_ORIGIN=

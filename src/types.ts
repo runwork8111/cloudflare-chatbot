@@ -10,6 +10,10 @@ export interface Env {
   // verify against) — verification is skipped in that case. Set as a real
   // secret in staging/production once a Turnstile widget exists.
   TURNSTILE_SECRET_KEY?: string;
+  // Restricts /admin/* CORS to this origin (the deployed admin dashboard's
+  // URL) once known. Falls back to "*" when unset, which is what local dev
+  // and this environment (no deployed Pages URL yet) use.
+  ADMIN_ALLOWED_ORIGIN?: string;
 }
 
 export interface Tenant {
