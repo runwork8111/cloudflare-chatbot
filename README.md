@@ -290,6 +290,25 @@ environment can't create.
 
 Every PR generates Worker types, typechecks, runs the test suite (`npm test`,
 via `@cloudflare/vitest-pool-workers` — real Workers runtime, migrated D1),
-then `wrangler deploy --dry-run` (`.github/workflows/ci.yml`). Requires repo
-secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` (Settings →
-Secrets and variables → Actions).
+then `wrangler deploy --dry-run` (`.github/workflows/ci.yml`, `validate` job).
+Requires repo secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`
+(Settings → Secrets and variables → Actions).
+
+### Staging deploys
+
+A push to the `staging` branch runs `validate` first, then (only if that
+passes) the `deploy-staging` job: applies D1 migrations to the real staging
+database (`--remote`), deploys with `wrangler deploy --env staging`, and —
+if the optional repo variable `STAGING_URL` is set (Settings → Secrets and
+variables → Actions → Variables; e.g.
+`https://chatbot-worker-staging.<your-subdomain>.workers.dev` — the
+`*.workers.dev` subdomain is account-specific, so it can't be hardcoded) —
+smoke-tests `/health` and fails the job if it doesn't return 200.
+
+This needs the staging D1/R2/Vectorize/Queues resources to already exist
+(the `wrangler ... create` commands are in "Database (D1)" and "RAG
+pipeline" above) — the workflow deploys to them, it doesn't create them.
+None of this has actually run, since it needs `CLOUDFLARE_API_TOKEN` /
+`CLOUDFLARE_ACCOUNT_ID` for a real account this environment doesn't have;
+the YAML is validated (`python -c "import yaml; yaml.safe_load(...)"`)
+but not executed.
