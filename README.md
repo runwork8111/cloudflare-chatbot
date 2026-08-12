@@ -63,6 +63,7 @@ once; only its hash is stored.
 | `GET /admin/tenants` | List tenants |
 | `GET /admin/tenants/:id` | Fetch one tenant |
 | `PATCH /admin/tenants/:id` | Update name/model/system_prompt/brand_config |
+| `GET /admin/tenants/:id/usage?days=30` | Request count, tokens, estimated cost (totals + daily) |
 | `POST /admin/tenants/:id/api-keys` | Mint a key (raw key shown once) |
 | `GET /admin/tenants/:id/api-keys` | List keys (no hash/raw key exposed) |
 | `POST /admin/tenants/:id/api-keys/:keyId/revoke` | Revoke a key |
@@ -82,6 +83,10 @@ curl http://localhost:8787/admin/tenants/<tenant-id>/api-keys \
 curl http://localhost:8787/admin/tenants/<tenant-id>/api-keys/<key-id>/revoke \
   -X POST -H "Authorization: Bearer $ADMIN_SECRET" -H "Content-Type: application/json" -d '{}'
 ```
+
+Cost is estimated at write time (`src/lib/pricing.ts`) from a hardcoded
+per-model $/1M-token table — good enough for dashboards and spend caps, not
+exact enough for invoicing. Update it if OpenAI repricing drifts.
 
 ## Admin dashboard
 

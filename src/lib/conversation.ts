@@ -1,5 +1,6 @@
 import type { Env, Tenant } from "../types";
 import type { ChatMessage } from "./openai";
+import { estimateCostUsd } from "./pricing";
 
 // Returns stored turns for a conversation, or null if it doesn't exist (or
 // belongs to a different tenant — same response either way, to avoid leaking
@@ -79,15 +80,16 @@ export async function persistTurn(
       conversationId
     ),
     env.DB.prepare(
-      `INSERT INTO usage_events (id, tenant_id, conversation_id, event_type, model, tokens_input, tokens_output)
-       VALUES (?1, ?2, ?3, 'chat_completion', ?4, ?5, ?6)`
+      `INSERT INTO usage_events (id, tenant_id, conversation_id, event_type, model, tokens_input, tokens_output, cost_usd)
+       VALUES (?1, ?2, ?3, 'chat_completion', ?4, ?5, ?6, ?7)`
     ).bind(
       crypto.randomUUID(),
       tenant.id,
       conversationId,
       tenant.model,
       usage.promptTokens,
-      usage.completionTokens
+      usage.completionTokens,
+      estimateCostUsd(tenant.model, usage.promptTokens, usage.completionTokens)
     ),
   ]);
 

@@ -111,9 +111,34 @@
       el("fieldBrandConfig").value = JSON.stringify(tenant.brand_config, null, 2);
       el("saveStatus").textContent = "";
       await loadApiKeys(id);
+      await loadUsage(id);
       renderEmbedSnippet(tenant);
     } catch (err) {
       alert("Failed to load tenant: " + err.message);
+    }
+  }
+
+  async function loadUsage(tenantId) {
+    const container = el("usageSummary");
+    try {
+      const { summary } = await api("/admin/tenants/" + tenantId + "/usage?days=30");
+      container.innerHTML = "";
+      const stats = [
+        ["Requests", summary.requestCount.toLocaleString()],
+        ["Input tokens", summary.tokensInput.toLocaleString()],
+        ["Output tokens", summary.tokensOutput.toLocaleString()],
+        ["Est. cost", "$" + summary.costUsd.toFixed(2)],
+      ];
+      for (const [label, value] of stats) {
+        const stat = document.createElement("div");
+        stat.className = "usage-stat";
+        stat.innerHTML = '<div class="value"></div><div class="label"></div>';
+        stat.querySelector(".value").textContent = value;
+        stat.querySelector(".label").textContent = label;
+        container.appendChild(stat);
+      }
+    } catch (err) {
+      container.textContent = "Failed to load usage: " + err.message;
     }
   }
 

@@ -3,6 +3,7 @@ import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import type { AppEnv } from "../types";
 import { generateApiKey, hashApiKey } from "../lib/crypto";
+import { getTenantUsageByDay, getTenantUsageSummary } from "../lib/usage";
 
 const app = new Hono<AppEnv>();
 
@@ -110,6 +111,19 @@ app.patch("/:tenantId", zValidator("json", updateTenantSchema), async (c) => {
     .bind(tenantId)
     .first<TenantRow>();
   return c.json(serializeTenant(tenant as TenantRow));
+});
+
+app.get("/:tenantId/usage", async (c) => {
+  const tenantId = c.req.param("tenantId");
+  const days = Math.min(90, Math.max(1, Number(c.req.query("days")) || 30));
+  const since = Math.floor(Date.now() / 1000) - days * 86400;
+
+  const [summary, daily] = await Promise.all([
+    getTenantUsageSummary(c.env, tenantId, since),
+    getTenantUsageByDay(c.env, tenantId, since),
+  ]);
+
+  return c.json({ days, summary, daily });
 });
 
 const createApiKeySchema = z.object({

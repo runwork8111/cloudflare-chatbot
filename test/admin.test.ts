@@ -158,6 +158,47 @@ describe("GET /admin/tenants/:id/api-keys", () => {
   });
 });
 
+describe("GET /admin/tenants/:id/usage", () => {
+  it("summarizes usage_events for the tenant", async () => {
+    const slug = `usage-${crypto.randomUUID()}`;
+    const createRes = await SELF.fetch(
+      adminRequest("/admin/tenants", { method: "POST", body: JSON.stringify({ slug, name: "Usage Co" }) })
+    );
+    const { id: tenantId } = await createRes.json<{ id: string }>();
+
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO usage_events (id, tenant_id, event_type, model, tokens_input, tokens_output, cost_usd) VALUES (?1, ?2, 'chat_completion', 'gpt-4o-mini', 100, 50, 0.001)`
+      ).bind(crypto.randomUUID(), tenantId),
+      env.DB.prepare(
+        `INSERT INTO usage_events (id, tenant_id, event_type, model, tokens_input, tokens_output, cost_usd) VALUES (?1, ?2, 'chat_completion', 'gpt-4o-mini', 200, 75, 0.002)`
+      ).bind(crypto.randomUUID(), tenantId),
+    ]);
+
+    const res = await SELF.fetch(adminRequest(`/admin/tenants/${tenantId}/usage`, { method: "GET" }));
+    expect(res.status).toBe(200);
+    const body = await res.json<{
+      summary: { requestCount: number; tokensInput: number; tokensOutput: number; costUsd: number };
+    }>();
+    expect(body.summary.requestCount).toBe(2);
+    expect(body.summary.tokensInput).toBe(300);
+    expect(body.summary.tokensOutput).toBe(125);
+    expect(body.summary.costUsd).toBeCloseTo(0.003, 6);
+  });
+
+  it("returns zeroed summary for a tenant with no usage", async () => {
+    const slug = `no-usage-${crypto.randomUUID()}`;
+    const createRes = await SELF.fetch(
+      adminRequest("/admin/tenants", { method: "POST", body: JSON.stringify({ slug, name: "No Usage Co" }) })
+    );
+    const { id: tenantId } = await createRes.json<{ id: string }>();
+
+    const res = await SELF.fetch(adminRequest(`/admin/tenants/${tenantId}/usage`, { method: "GET" }));
+    const body = await res.json<{ summary: { requestCount: number } }>();
+    expect(body.summary.requestCount).toBe(0);
+  });
+});
+
 describe("API key lifecycle", () => {
   it("mints a key that authenticates against /v1/*, then revokes it", async () => {
     const slug = `lifecycle-${crypto.randomUUID()}`;
