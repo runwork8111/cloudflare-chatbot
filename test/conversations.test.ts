@@ -164,4 +164,28 @@ describe("POST /v1/conversations/:id/messages", () => {
     );
     expect(res.status).toBe(502);
   });
+
+  it("returns 402 once the tenant's monthly budget is exhausted, without calling OpenAI", async () => {
+    await env.DB.prepare(`UPDATE tenants SET monthly_budget_usd = 1 WHERE id = ?1`)
+      .bind(tenantId)
+      .run();
+    await env.DB.prepare(
+      `INSERT INTO usage_events (id, tenant_id, event_type, model, cost_usd) VALUES (?1, ?2, 'chat_completion', 'gpt-4o-mini', 1)`
+    )
+      .bind(crypto.randomUUID(), tenantId)
+      .run();
+
+    const createRes = await SELF.fetch(
+      authedRequest("/v1/conversations", { method: "POST", body: "{}" })
+    );
+    const { id } = await createRes.json<{ id: string }>();
+
+    const res = await SELF.fetch(
+      authedRequest(`/v1/conversations/${id}/messages`, {
+        method: "POST",
+        body: JSON.stringify({ message: "hi" }),
+      })
+    );
+    expect(res.status).toBe(402);
+  });
 });

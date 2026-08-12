@@ -1,4 +1,4 @@
-import type { Env } from "../types";
+import type { Env, Tenant } from "../types";
 
 export interface UsageSummary {
   requestCount: number;
@@ -52,4 +52,22 @@ export async function getTenantUsageByDay(
     .all<DailyUsage>();
 
   return results;
+}
+
+export function startOfCurrentMonthUnixSeconds(): number {
+  const now = new Date();
+  return Math.floor(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1) / 1000);
+}
+
+// Enforced against the calendar month to date, not a rolling 30 days —
+// simpler to reason about for both the tenant and whoever's reading the
+// dashboard ("this month's spend"), and resets predictably.
+export async function isOverMonthlyBudget(
+  env: Env,
+  tenant: Pick<Tenant, "id" | "monthly_budget_usd">
+): Promise<boolean> {
+  if (tenant.monthly_budget_usd == null) return false;
+
+  const summary = await getTenantUsageSummary(env, tenant.id, startOfCurrentMonthUnixSeconds());
+  return summary.costUsd >= tenant.monthly_budget_usd;
 }

@@ -27,6 +27,7 @@ interface TenantRow {
   model: string;
   system_prompt: string;
   brand_config: string;
+  monthly_budget_usd: number | null;
   created_at: number;
   updated_at: number;
 }
@@ -75,6 +76,9 @@ const updateTenantSchema = z.object({
   model: z.string().min(1).max(100).optional(),
   system_prompt: z.string().max(4000).optional(),
   brand_config: z.record(z.string(), z.unknown()).optional(),
+  // null explicitly clears the cap (unlimited); omit the field to leave it
+  // unchanged, same convention as the rest of this PATCH endpoint.
+  monthly_budget_usd: z.number().positive().nullable().optional(),
 });
 
 app.patch("/:tenantId", zValidator("json", updateTenantSchema), async (c) => {

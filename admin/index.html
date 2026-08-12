@@ -58,6 +58,9 @@
         <label>Brand config <span class="hint">(raw JSON)</span>
           <textarea id="fieldBrandConfig" rows="3" class="mono"></textarea>
         </label>
+        <label>Monthly budget (USD) <span class="hint">(blank = unlimited)</span>
+          <input type="number" id="fieldBudget" min="0" step="0.01" placeholder="unlimited" />
+        </label>
         <button type="submit" class="btn-primary">Save changes</button>
         <span id="saveStatus" class="status"></span>
       </form>

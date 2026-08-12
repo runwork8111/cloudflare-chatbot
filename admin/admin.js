@@ -109,6 +109,7 @@
       el("fieldModel").value = tenant.model;
       el("fieldSystemPrompt").value = tenant.system_prompt;
       el("fieldBrandConfig").value = JSON.stringify(tenant.brand_config, null, 2);
+      el("fieldBudget").value = tenant.monthly_budget_usd ?? "";
       el("saveStatus").textContent = "";
       await loadApiKeys(id);
       await loadDocuments(id);
@@ -212,6 +213,8 @@
       return;
     }
 
+    const budgetRaw = el("fieldBudget").value.trim();
+
     try {
       const updated = await api("/admin/tenants/" + selectedTenantId, {
         method: "PATCH",
@@ -220,6 +223,7 @@
           model: el("fieldModel").value,
           system_prompt: el("fieldSystemPrompt").value,
           brand_config: brandConfig,
+          monthly_budget_usd: budgetRaw === "" ? null : Number(budgetRaw),
         }),
       });
       statusEl.textContent = "Saved";

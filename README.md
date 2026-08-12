@@ -89,6 +89,16 @@ Cost is estimated at write time (`src/lib/pricing.ts`) from a hardcoded
 per-model $/1M-token table — good enough for dashboards and spend caps, not
 exact enough for invoicing. Update it if OpenAI repricing drifts.
 
+### Monthly budget caps
+
+Set `monthly_budget_usd` on a tenant (via `PATCH /admin/tenants/:id` or the
+dashboard) to cap its spend; `null` (the default) means unlimited. Both
+message endpoints check the tenant's cost-to-date for the current calendar
+month (`src/lib/usage.ts`'s `isOverMonthlyBudget`) *before* calling OpenAI,
+returning `402 Payment Required` once the cap is reached — so a capped
+tenant can't run up further spend past its budget, not even by one more
+request's worth.
+
 ## Admin dashboard
 
 `admin/` is a static, no-build-step SPA (plain HTML/CSS/JS, same style as

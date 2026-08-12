@@ -8,6 +8,7 @@ import { loadConversationHistory, persistTurn, trimHistory } from "../lib/conver
 import { verifyTurnstileToken } from "../lib/turnstile";
 import { getGroundedContext } from "../lib/retrieval";
 import { logger } from "../lib/logger";
+import { isOverMonthlyBudget } from "../lib/usage";
 
 const app = new Hono<AppEnv>();
 
@@ -63,6 +64,10 @@ app.post("/:id/messages", zValidator("json", sendMessageSchema), async (c) => {
     return c.json({ error: "Conversation not found" }, 404);
   }
 
+  if (await isOverMonthlyBudget(c.env, tenant)) {
+    return c.json({ error: "Monthly budget exceeded for this tenant" }, 402);
+  }
+
   let result;
   let sources: string[] = [];
   try {
@@ -104,6 +109,10 @@ app.post("/:id/messages/stream", zValidator("json", sendMessageSchema), async (c
   const history = await loadConversationHistory(c.env, tenant.id, conversationId);
   if (!history) {
     return c.json({ error: "Conversation not found" }, 404);
+  }
+
+  if (await isOverMonthlyBudget(c.env, tenant)) {
+    return c.json({ error: "Monthly budget exceeded for this tenant" }, 402);
   }
 
   return streamSSE(c, async (stream) => {

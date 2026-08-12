@@ -15,7 +15,7 @@ export const tenantAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
 
   const keyHash = await hashApiKey(apiKey);
   const tenant = await c.env.DB.prepare(
-    `SELECT t.id, t.slug, t.name, t.plan, t.model, t.system_prompt
+    `SELECT t.id, t.slug, t.name, t.plan, t.model, t.system_prompt, t.monthly_budget_usd
      FROM api_keys k
      JOIN tenants t ON t.id = k.tenant_id
      WHERE k.key_hash = ?1 AND k.revoked_at IS NULL`

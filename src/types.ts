@@ -33,6 +33,8 @@ export interface Tenant {
   plan: string;
   model: string;
   system_prompt: string;
+  // null = unlimited (default until an operator sets one).
+  monthly_budget_usd: number | null;
 }
 
 export interface Variables {
