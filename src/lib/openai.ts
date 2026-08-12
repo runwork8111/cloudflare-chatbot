@@ -19,9 +19,10 @@ interface OpenAIChatResponse {
 export async function chatCompletion(
   env: Env,
   model: string,
-  messages: ChatMessage[]
+  messages: ChatMessage[],
+  fetchImpl: typeof fetch = fetch
 ): Promise<ChatCompletionResult> {
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+  const res = await fetchImpl("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -57,9 +58,10 @@ interface OpenAIStreamChunk {
 export async function* streamChatCompletion(
   env: Env,
   model: string,
-  messages: ChatMessage[]
+  messages: ChatMessage[],
+  fetchImpl: typeof fetch = fetch
 ): AsyncGenerator<ChatStreamEvent> {
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+  const res = await fetchImpl("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

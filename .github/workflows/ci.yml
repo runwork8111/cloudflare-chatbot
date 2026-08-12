@@ -18,8 +18,14 @@ jobs:
 
       - run: npm ci
 
+      - name: Generate Worker types
+        run: npm run types
+
       - name: Typecheck
         run: npm run typecheck
+
+      - name: Run tests
+        run: npm test
 
       - name: Wrangler dry-run deploy
         run: npm run dry-run

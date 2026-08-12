@@ -4,7 +4,7 @@ import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import type { AppEnv } from "../types";
 import { chatCompletion, streamChatCompletion } from "../lib/openai";
-import { loadConversationHistory, persistTurn } from "../lib/conversation";
+import { loadConversationHistory, persistTurn, trimHistory } from "../lib/conversation";
 
 const app = new Hono<AppEnv>();
 
@@ -46,7 +46,7 @@ app.post("/:id/messages", zValidator("json", sendMessageSchema), async (c) => {
   try {
     result = await chatCompletion(c.env, tenant.model, [
       { role: "system", content: tenant.system_prompt },
-      ...history,
+      ...trimHistory(history),
       { role: "user", content: message },
     ]);
   } catch (err) {
@@ -86,7 +86,7 @@ app.post("/:id/messages/stream", zValidator("json", sendMessageSchema), async (c
     try {
       for await (const event of streamChatCompletion(c.env, tenant.model, [
         { role: "system", content: tenant.system_prompt },
-        ...history,
+        ...trimHistory(history),
         { role: "user", content: message },
       ])) {
         if (event.type === "delta") {

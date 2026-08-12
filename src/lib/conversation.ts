@@ -26,6 +26,32 @@ export async function loadConversationHistory(
   return history.results;
 }
 
+const CHARS_PER_TOKEN_ESTIMATE = 4;
+export const DEFAULT_MAX_CONTEXT_TOKENS = 6000;
+
+// Keeps the most recent turns that fit under a rough token budget (no
+// tokenizer on the Workers runtime, so ~4 chars/token is used as a
+// cautious estimate). Always keeps at least the single most recent
+// message, even if it alone exceeds the budget, so a long turn never
+// results in empty context.
+export function trimHistory(
+  history: ChatMessage[],
+  maxTokens: number = DEFAULT_MAX_CONTEXT_TOKENS
+): ChatMessage[] {
+  const charBudget = maxTokens * CHARS_PER_TOKEN_ESTIMATE;
+  const kept: ChatMessage[] = [];
+  let used = 0;
+
+  for (let i = history.length - 1; i >= 0; i--) {
+    const cost = history[i].content.length;
+    if (used + cost > charBudget && kept.length > 0) break;
+    kept.unshift(history[i]);
+    used += cost;
+  }
+
+  return kept;
+}
+
 export interface TurnUsage {
   promptTokens: number;
   completionTokens: number;
