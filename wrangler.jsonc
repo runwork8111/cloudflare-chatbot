@@ -4,7 +4,7 @@
   // when no --env flag is passed.
   "name": "chatbot-worker-dev",
   "main": "src/index.ts",
-  "compatibility_date": "2026-08-12",
+  "compatibility_date": "2026-08-11",
   "compatibility_flags": ["nodejs_compat"],
   "observability": {
     "enabled": true,
@@ -13,12 +13,32 @@
   "vars": {
     "ENVIRONMENT": "dev"
   },
+  // One D1 database per environment, same binding name ("DB") everywhere so
+  // application code never branches on environment. Replace each
+  // database_id with the id returned by `wrangler d1 create <name>` — see
+  // README for the exact commands.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "chatbot-worker-db-dev",
+      "database_id": "REPLACE_WITH_DEV_DATABASE_ID",
+      "migrations_dir": "migrations"
+    }
+  ],
   "env": {
     "staging": {
       "name": "chatbot-worker-staging",
       "vars": {
         "ENVIRONMENT": "staging"
-      }
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "chatbot-worker-db-staging",
+          "database_id": "REPLACE_WITH_STAGING_DATABASE_ID",
+          "migrations_dir": "migrations"
+        }
+      ]
     },
     "production": {
       // No suffix: keeps the *.workers.dev prod URL clean, and this is the
@@ -26,7 +46,15 @@
       "name": "chatbot-worker",
       "vars": {
         "ENVIRONMENT": "production"
-      }
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "chatbot-worker-db-production",
+          "database_id": "REPLACE_WITH_PRODUCTION_DATABASE_ID",
+          "migrations_dir": "migrations"
+        }
+      ]
     }
   }
 }
