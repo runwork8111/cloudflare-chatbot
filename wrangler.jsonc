@@ -4,7 +4,7 @@
   // when no --env flag is passed.
   "name": "chatbot-worker-dev",
   "main": "src/index.ts",
-  "compatibility_date": "2026-08-12",
+  "compatibility_date": "2026-08-11",
   "compatibility_flags": ["nodejs_compat"],
   "observability": {
     "enabled": true,

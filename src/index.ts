@@ -1,14 +1,13 @@
-export interface Env {
-  ENVIRONMENT: string;
-  DB: D1Database;
-}
+import { Hono } from "hono";
+import type { AppEnv } from "./types";
+import { tenantAuth } from "./middleware/tenant";
+import conversations from "./routes/conversations";
 
-export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
-    return Response.json({
-      ok: true,
-      service: "chatbot-worker",
-      environment: env.ENVIRONMENT,
-    });
-  },
-} satisfies ExportedHandler<Env>;
+const app = new Hono<AppEnv>();
+
+app.get("/health", (c) => c.json({ ok: true, environment: c.env.ENVIRONMENT }));
+
+app.use("/v1/*", tenantAuth);
+app.route("/v1/conversations", conversations);
+
+export default app;
