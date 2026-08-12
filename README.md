@@ -13,7 +13,7 @@ Multi-tenant chatbot backend on Cloudflare Workers + OpenAI.
 ## Local setup
 
 ```bash
-cp .dev.vars.example .dev.vars   # fill in OPENAI_API_KEY
+cp .dev.vars.example .dev.vars   # fill in OPENAI_API_KEY and ADMIN_SECRET
 npm run dev
 ```
 
@@ -49,6 +49,29 @@ curl http://localhost:8787/v1/conversations \
   -d '{"external_user_ref":"visitor-42"}'
 ```
 
+## Admin API
+
+`/admin/*` creates tenants and mints/revokes their API keys. It's protected
+by a single shared secret (`ADMIN_SECRET`) — an internal control-plane tool
+for now, superseded by the Cloudflare Access-gated dashboard planned for
+Week 2. A minted key is returned exactly once; only its hash is stored.
+
+```bash
+curl http://localhost:8787/admin/tenants \
+  -X POST -H "Authorization: Bearer $ADMIN_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"slug":"acme","name":"Acme Co","system_prompt":"You are Acme'\''s support assistant."}'
+
+curl http://localhost:8787/admin/tenants/<tenant-id>/api-keys \
+  -X POST -H "Authorization: Bearer $ADMIN_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"label":"production widget key"}'
+# => { "id": "...", "key": "sk_live_..." }  — save the key now, it isn't shown again
+
+curl http://localhost:8787/admin/tenants/<tenant-id>/api-keys/<key-id>/revoke \
+  -X POST -H "Authorization: Bearer $ADMIN_SECRET" -H "Content-Type: application/json" -d '{}'
+```
+
 ## Widget
 
 `widget/widget.js` is a single self-contained script (no build step) that
@@ -70,6 +93,8 @@ rate-limited and safe to expose client-side.
 
 ## CI
 
-Every PR runs typecheck + `wrangler deploy --dry-run` via GitHub Actions
-(`.github/workflows/ci.yml`). Requires repo secrets `CLOUDFLARE_API_TOKEN`
-and `CLOUDFLARE_ACCOUNT_ID` (Settings → Secrets and variables → Actions).
+Every PR generates Worker types, typechecks, runs the test suite (`npm test`,
+via `@cloudflare/vitest-pool-workers` — real Workers runtime, migrated D1),
+then `wrangler deploy --dry-run` (`.github/workflows/ci.yml`). Requires repo
+secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` (Settings →
+Secrets and variables → Actions).

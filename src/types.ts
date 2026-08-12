@@ -2,6 +2,7 @@ export interface Env {
   ENVIRONMENT: string;
   DB: D1Database;
   OPENAI_API_KEY: string;
+  ADMIN_SECRET: string;
 }
 
 export interface Tenant {

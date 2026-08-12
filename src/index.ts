@@ -2,11 +2,19 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { AppEnv } from "./types";
 import { tenantAuth } from "./middleware/tenant";
+import { adminAuth } from "./middleware/admin";
 import conversations from "./routes/conversations";
+import adminTenants from "./routes/admin-tenants";
 
 const app = new Hono<AppEnv>();
 
 app.get("/health", (c) => c.json({ ok: true, environment: c.env.ENVIRONMENT }));
+
+// Internal tenant-management API — creates tenants and mints/revokes their
+// API keys. Shared-secret protected for now; superseded by the Cloudflare
+// Access-gated admin dashboard in Week 2.
+app.use("/admin/*", adminAuth);
+app.route("/admin/tenants", adminTenants);
 
 // The widget is embedded on arbitrary tenant websites, so /v1/* must accept
 // cross-origin requests from any origin — the API key is what scopes access,
