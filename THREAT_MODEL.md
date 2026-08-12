@@ -1,7 +1,7 @@
 # Threat model
 
 Short, living document — updated as the system grows, not a one-time
-checkbox. Last reviewed: Day 14 of the build.
+checkbox. Last reviewed: Day 26 of the build.
 
 ## Assets
 
@@ -34,8 +34,29 @@ checkbox. Last reviewed: Day 14 of the build.
 
 - **One key tier per tenant**: the widget embeds a full-access tenant API key client-side (flagged since Day 6). A distinct rate-limited "public" key type, separate from a back-office "secret" key, is still open. Rate limiting + Turnstile bound the damage in the meantime.
 - **Admin auth is a shared secret, not per-operator identity**: anyone with `ADMIN_SECRET` can do anything to any tenant, and there's no audit log of who did what. Acceptable for a single-operator internal tool; not acceptable once more than one person touches production. Cloudflare Access (per-identity, logged) is the intended replacement — blocked on having a real zone/dashboard access to configure it, which this environment doesn't have.
-- **No PII redaction on stored conversation content yet** — planned for Day 20 alongside the RAG guardrails work.
+- **PII redaction covers logs only, not stored conversation content** (Day 20, `src/lib/pii.ts`) — `messages.content` in D1 is intentionally kept raw, since redacting it would break conversation history/context. If a tenant's data ever needs to satisfy a stricter PII policy, that's a retention/access-control problem, not something to solve by mangling stored messages.
 - **No audit log** of admin actions (tenant created/updated, key minted/revoked) beyond D1's own `created_at`/`updated_at` columns. Worth adding before a real pilot if more than one operator has `ADMIN_SECRET`.
+
+## Day 26 security review
+
+Ran a full review of Days 9–25 (rate limiting through billing export) using
+the `security-review` skill: two-phase agent pass (broad candidate search,
+then independent false-positive filtering on each candidate, 8/10
+confidence threshold to survive). **No findings met the bar.** Candidates
+investigated and ruled out: budget-check TOCTOU (bounded to a tenant's own
+spend, no cross-tenant impact — resource-exhaustion exclusion), admin-token
+comparison not being constant-time (compares SHA-256 digests, not the raw
+secret — no path to recovering it via timing), `/admin/*` CORS defaulting
+to `*` (auth is a bearer token in `localStorage`, not a cookie — wildcard
+CORS doesn't let another origin read or forge it), document filenames in R2
+key construction (keys are opaque, always looked up verbatim from D1, never
+re-parsed or listed by prefix), and the `PATCH /admin/tenants/:id` dynamic
+`SET` clause (Zod strips unknown keys before the object reaches the
+SQL-building loop, so it's a fixed 5-field whitelist, not attacker input).
+Confirmed solid: tenant isolation is enforced server-side on every D1 query,
+API keys use proper CSPRNG + SHA-256, and both `widget.js`/`admin.js` use
+`textContent` rather than `innerHTML` for anything server- or
+tenant-derived.
 
 ## Secrets Store: considered and deliberately not used (yet)
 
